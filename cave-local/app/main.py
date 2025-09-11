@@ -12,7 +12,6 @@ from typing import List
 
 # Datadog APM
 from ddtrace import patch_all, tracer
-from ddtrace.contrib.fastapi import patch as fastapi_patch
 import datadog
 
 # headless backend for matplotlib (avoids GUI/toolkit issues)
@@ -41,10 +40,8 @@ settings = get_settings()
 
 # Initialize Datadog APM
 if settings.datadog_api_key:
-    # Patch all supported libraries
+    # Patch all supported libraries (includes FastAPI automatically)
     patch_all()
-    # Patch FastAPI specifically
-    fastapi_patch()
     
     # Configure Datadog
     datadog.initialize(
