@@ -1,0 +1,24 @@
+@startuml
+title Activity: User Flow (Local)
+
+start
+:Open React UI (localhost:5173);
+:Enter shots / edit rows;
+if (All rows valid?) then (yes)
+  :Click Reduce;
+  :POST /reduce → show meta;
+  :Click Plot;
+  :POST /plot → show PNG;
+  if (Save?) then (yes)
+    :Click Save;
+    :POST /save → JSON+PNG written;
+    :Show saved paths;
+  else (no)
+  endif
+else (no)
+  :Show inline validation errors;
+  :Fix inputs;
+endif
+stop
+
+@enduml

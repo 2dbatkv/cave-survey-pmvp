@@ -1,0 +1,27 @@
+@startuml
+title Cave Mapper - Components (Local Pre-MVP)
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+
+package "User Device" {
+  [Browser\n(React/Vite)] as React
+}
+
+node "Local Machine" {
+  [FastAPI\nUvicorn] as API
+  [Filesystem\n./data/<section>/<date>/] as FS
+}
+
+database "Matplotlib (Agg)\nRenderer" as MPL
+
+React -[#blue]-> API : HTTP (JSON / image/png)\nhttp://127.0.0.1:8000
+API -[#darkgreen]-> FS : write JSON+PNG
+API -[#brown]-> MPL : render PNG
+
+note right of React
+Reads .env.local:
+VITE_API_BASE_URL
+end note
+
+@enduml

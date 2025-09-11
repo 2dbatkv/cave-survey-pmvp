@@ -1,0 +1,21 @@
+@startuml
+title Config Wiring
+
+rectangle "Frontend (.env.local)" {
+  note as N1
+  VITE_API_BASE_URL=http://127.0.0.1:8000
+  end note
+}
+
+rectangle "Backend (main.py)" {
+  note as N2
+  CORSMiddleware:
+    allow_origins=["http://localhost:5173"]
+    allow_methods=["*"]
+    allow_headers=["*"]
+  end note
+}
+
+N1 -down-> N2 : HTTP calls resolve to API base\nCORS allows dev origin
+
+@enduml

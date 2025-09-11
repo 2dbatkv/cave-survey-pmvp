@@ -1,0 +1,16 @@
+@startuml
+title Sequence: Reduce (JSON → JSON)
+
+actor User
+participant "React UI" as FE
+participant "FastAPI /reduce" as BE
+participant "Graph Reducer\n(BFS + trig)" as Reducer
+
+User -> FE : Enter shots\nClick "Reduce"
+FE -> BE : POST /reduce {origin, section, shots}
+BE -> Reducer : reduce_graph(shots, origin)
+Reducer --> BE : {stations, edges, meta}
+BE --> FE : 200 JSON {stations, edges, meta}
+FE -> User : Show meta (totals, bbox, residuals)
+
+@enduml

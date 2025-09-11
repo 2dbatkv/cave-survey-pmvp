@@ -1,0 +1,19 @@
+@startuml
+title Sequence: Plot (JSON → PNG)
+
+actor User
+participant "React UI" as FE
+participant "FastAPI /plot" as BE
+participant "Graph Reducer" as Reducer
+participant "Matplotlib (Agg)" as MPL
+
+User -> FE : Click "Plot"
+FE -> BE : POST /plot {origin, section, shots}
+BE -> Reducer : reduce_graph(...)
+Reducer --> BE : {stations, edges, meta}
+BE -> MPL : plot_graph_png(stations, edges)
+MPL --> BE : PNG bytes (image/png)
+BE --> FE : 200 image/png (stream)
+FE -> User : Display PNG
+
+@enduml

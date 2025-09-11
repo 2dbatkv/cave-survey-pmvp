@@ -1,0 +1,29 @@
+@startuml
+title Cave Mapper - Deployment (Local)
+
+node "Dev Host (Laptop/Desktop)" {
+  node "Frontend" {
+    artifact "cave-frontend" {
+      [Vite Dev Server :5173]
+      [React App]
+    }
+  }
+  node "Backend" {
+    artifact "cave-local" {
+      [Uvicorn :8000]
+      [FastAPI app.main:app]
+      [Matplotlib (Agg)]
+    }
+  }
+  folder "Data" as Data {
+    file "YYYY-MM-DD.json"
+    file "YYYY-MM-DD.png"
+  }
+}
+
+[Vite Dev Server :5173] --> [React App]
+[React App] --> [Uvicorn :8000] : HTTP
+[Uvicorn :8000] --> [Matplotlib (Agg)] : render plot
+[Uvicorn :8000] --> Data : save JSON/PNG
+
+@enduml

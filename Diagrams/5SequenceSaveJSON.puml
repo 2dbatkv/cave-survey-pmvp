@@ -1,0 +1,22 @@
+@startuml
+title Sequence: Save (JSON → JSON+PNG files)
+
+actor User
+participant "React UI" as FE
+participant "FastAPI /save" as BE
+participant "Graph Reducer" as Reducer
+database "Filesystem" as FS
+participant "Matplotlib (Agg)" as MPL
+
+User -> FE : Click "Save"
+FE -> BE : POST /save {origin, section, shots}
+BE -> Reducer : reduce_graph(...)
+Reducer --> BE : {stations, edges, meta}
+BE -> MPL : plot_graph_png(...)
+MPL --> BE : PNG buffer
+BE -> FS : write <date>.json
+BE -> FS : write <date>.png
+BE --> FE : 200 {saved, json_path, png_path, meta}
+FE -> User : Show saved paths
+
+@enduml

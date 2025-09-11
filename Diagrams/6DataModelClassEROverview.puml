@@ -1,0 +1,65 @@
+@startuml
+  title Data Model (Request/Response & Derived)
+
+  class TraverseIn {
+    +origin_x: float = 0
+    +origin_y: float = 0
+    +origin_z: float = 0
+    +section: str = "default"
+    +shots: List<Shot>
+    +close: Optional<str>
+  }
+
+  class Shot {
+    +from_station: str
+    +to_station: str
+    +slope_distance: float
+    +azimuth_deg: float
+    +inclination_deg: float
+  }
+
+  class ReduceResponse {
+    +stations: Map<str, XYZ>
+    +edges: List<Tuple<str,str>>
+    +meta: Meta
+  }
+
+  class XYZ {
+    +x: float
+    +y: float
+    +z: float
+  }
+
+  class Meta {
+    +num_stations: int
+    +num_shots: int
+    +total_slope_distance: float
+    +total_horizontal_distance: float
+    +bbox: BBox
+    +residuals: List<Residual>
+  }
+
+  class BBox {
+    +min_x: float
+    +max_x: float
+    +min_y: float
+    +max_y: float
+    +min_z: float
+    +max_z: float
+  }
+
+  class Residual {
+    +from: str
+    +to: str
+    +dx: float
+    +dy: float
+    +dz: float
+  }
+
+  TraverseIn ||--o{ Shot
+  ReduceResponse ||--|| Meta
+  ReduceResponse ||--o{ XYZ
+  Meta ||--|| BBox
+  Meta ||--o{ Residual
+
+  @enduml
