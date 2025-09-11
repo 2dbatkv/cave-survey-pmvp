@@ -417,6 +417,31 @@ def submit_feedback(
         logger.error(f"Feedback endpoint error: {e}")
         raise HTTPException(status_code=500, detail="Failed to submit feedback")
 
+@app.get("/admin/feedback")
+def view_feedback(db: Session = Depends(get_db)):
+    try:
+        feedback_items = db.query(Feedback).order_by(Feedback.submitted_at.desc()).all()
+        
+        return {
+            "feedback_count": len(feedback_items),
+            "feedback": [
+                {
+                    "id": item.id,
+                    "feedback_text": item.feedback_text,
+                    "submitted_at": item.submitted_at,
+                    "user_session": item.user_session,
+                    "category": item.category,
+                    "priority": item.priority,
+                    "status": item.status
+                }
+                for item in feedback_items
+            ]
+        }
+        
+    except Exception as e:
+        logger.error(f"View feedback error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to retrieve feedback")
+
 @app.get("/surveys")
 def list_surveys(
     current_user: User = Depends(get_current_active_user),
