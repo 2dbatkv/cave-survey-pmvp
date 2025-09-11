@@ -39,11 +39,14 @@ app = FastAPI(title=settings.app_name, debug=settings.debug)
 create_tables()
 
 # ----- CORS -----
+# Debug: log the allowed origins
+logger.info(f"CORS allowed_origins: {settings.allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
-    allow_credentials=True,
-    allow_methods=["*"],
+    allow_origins=["*"],  # Temporary wildcard for debugging
+    allow_credentials=False,  # Must be False when using wildcard
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
 
