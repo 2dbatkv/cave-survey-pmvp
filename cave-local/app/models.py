@@ -1,5 +1,5 @@
-from pydantic import BaseModel, Field, conlist, validator
-from typing import List, Optional
+from pydantic import BaseModel, Field, field_validator
+from typing import List, Optional, Annotated
 from datetime import datetime
 
 class Shot(BaseModel):
@@ -9,13 +9,15 @@ class Shot(BaseModel):
     azimuth_deg: float = Field(..., ge=0, lt=360)
     inclination_deg: float = Field(..., ge=-90, le=90)
     
-    @validator('from_station', 'to_station')
+    @field_validator('from_station', 'to_station')
+    @classmethod
     def validate_station_names(cls, v):
         if not v.strip():
             raise ValueError('Station names cannot be empty or whitespace')
         return v.strip()
     
-    @validator('slope_distance')
+    @field_validator('slope_distance')
+    @classmethod
     def validate_distance(cls, v):
         if v <= 0:
             raise ValueError('Slope distance must be positive')
@@ -25,11 +27,12 @@ class TraverseIn(BaseModel):
     origin_x: float = Field(default=0, ge=-100000, le=100000)  # Reasonable coordinate bounds
     origin_y: float = Field(default=0, ge=-100000, le=100000)
     origin_z: float = Field(default=0, ge=-10000, le=10000)   # Cave depth bounds
-    shots: conlist(Shot, min_items=1, max_items=1000)         # Max 1000 shots per request
+    shots: Annotated[List[Shot], Field(min_length=1, max_length=1000)]  # Max 1000 shots per request
     section: str = Field(default="default", min_length=1, max_length=100)
     close: Optional[str] = Field(default=None, max_length=50)
     
-    @validator('section')
+    @field_validator('section')
+    @classmethod
     def validate_section(cls, v):
         if not v.strip():
             raise ValueError('Section name cannot be empty')
@@ -44,7 +47,8 @@ class UserCreate(BaseModel):
     email: str = Field(..., min_length=5, max_length=100)
     password: str = Field(..., min_length=8, max_length=100)
     
-    @validator('username')
+    @field_validator('username')
+    @classmethod
     def validate_username(cls, v):
         import re
         if not re.match(r'^[a-zA-Z0-9_]+$', v):
