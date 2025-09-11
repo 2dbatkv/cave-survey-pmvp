@@ -1,0 +1,55 @@
+@startuml
+title Cave Mapper - Authentication Flow
+
+participant "User" as User
+participant "React Frontend" as Frontend
+participant "FastAPI Backend" as API
+participant "PostgreSQL DB" as DB
+participant "JWT Service" as JWT
+
+== User Registration ==
+User -> Frontend: Enter username, email, password
+Frontend -> API: POST /register
+API -> DB: Check username exists
+DB -> API: Username available
+API -> JWT: Hash password
+JWT -> API: Hashed password
+API -> DB: INSERT new user
+DB -> API: User created (ID)
+API -> JWT: Generate access token
+JWT -> API: JWT token
+API -> Frontend: {"access_token": "...", "token_type": "bearer"}
+Frontend -> Frontend: Store token in state
+Frontend -> User: Registration successful
+
+== User Login ==
+User -> Frontend: Enter username, password
+Frontend -> API: POST /token (OAuth2PasswordRequestForm)
+API -> DB: SELECT user by username
+DB -> API: User record
+API -> JWT: Verify password hash
+JWT -> API: Password valid
+API -> JWT: Generate access token
+JWT -> API: JWT token
+API -> Frontend: {"access_token": "...", "token_type": "bearer"}
+Frontend -> Frontend: Store token in state
+Frontend -> User: Login successful
+
+== Protected Endpoint Access ==
+User -> Frontend: Access protected feature
+Frontend -> API: GET /surveys\nAuthorization: Bearer {token}
+API -> JWT: Decode & validate token
+JWT -> API: User details
+API -> DB: Query user's surveys
+DB -> API: Survey data
+API -> Frontend: Survey list
+Frontend -> User: Display surveys
+
+== Token Expiration ==
+Frontend -> API: Request with expired token
+API -> JWT: Validate token
+JWT -> API: Token expired
+API -> Frontend: 401 Unauthorized
+Frontend -> User: Redirect to login
+
+@enduml

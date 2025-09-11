@@ -1,0 +1,68 @@
+@startuml
+title Cave Mapper - Full Stack Architecture (Production)
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam backgroundColor #FAFAFA
+
+cloud "Internet" {
+  [User Browser] as Browser
+}
+
+cloud "Netlify" {
+  [React Frontend\n(Vite/ES6)] as Frontend
+  note right of Frontend
+    Built from: cave-frontend/
+    URL: glowing-toffee-6552e3.netlify.app
+    Environment: VITE_API_BASE_URL
+  end note
+}
+
+cloud "Render" {
+  [FastAPI Backend\n(Uvicorn/Python)] as API
+  note right of API
+    Built from: cave-local/
+    URL: cave-survey-pmvp.onrender.com
+    Features: Auth, CORS, Health checks
+  end note
+}
+
+cloud "AWS" {
+  database "S3 Bucket" as S3 {
+    [JSON Survey Data]
+    [PNG Visualizations]
+  }
+  note right of S3
+    Public read access
+    Organized by section/date
+  end note
+}
+
+cloud "Render Database" {
+  database "PostgreSQL" as DB {
+    [Users Table]
+    [Surveys Table]
+    [Feedback Table]
+  }
+  note right of DB
+    SQLAlchemy ORM
+    JWT Authentication
+    Auto-timestamps
+  end note
+}
+
+' User interactions
+Browser -[#blue]-> Frontend : HTTPS\nUser Interface
+Frontend -[#green]-> API : HTTPS/JSON\nREST API Calls
+
+' Backend services
+API -[#orange]-> DB : SQL Queries\nSQLAlchemy ORM
+API -[#purple]-> S3 : Upload JSON/PNG\nBoto3 SDK
+
+' Internal processing
+API -[#brown]-> API : Cave Survey Math\n• Coordinate Transform\n• Graph Traversal\n• Matplotlib Rendering
+
+' Data flows
+S3 -[#gray,dashed]-> Browser : Public URLs\nJSON/PNG Downloads
+
+@enduml

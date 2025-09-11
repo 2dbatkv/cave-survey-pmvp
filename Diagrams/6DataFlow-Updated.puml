@@ -1,0 +1,101 @@
+@startuml
+title Cave Mapper - Data Flow Architecture
+
+skinparam backgroundColor #F8F9FA
+skinparam arrow {
+  FontSize 11
+}
+
+package "Data Sources" {
+  [User Input\nShot Measurements] as UserInput
+  [User Feedback\nIdeas & Suggestions] as UserFeedback
+  [Authentication\nCredentials] as AuthData
+}
+
+package "Frontend Processing" {
+  [Input Validation\nReal-time Checks] as Validation
+  [API Client\nHTTP Requests] as APIClient
+  [State Management\nReact Hooks] as StateManagement
+  [UI Rendering\nDOM Updates] as UIRendering
+}
+
+package "Backend Processing" {
+  [Request Validation\nPydantic Schemas] as RequestVal
+  [Authentication\nJWT Verification] as AuthValidation
+  [Cave Survey Math\nCoordinate Transform] as CaveMath
+  [Visualization\nMatplotlib Rendering] as Visualization
+  [Data Serialization\nJSON Generation] as Serialization
+}
+
+package "Data Persistence" {
+  database "PostgreSQL\nTransactional Data" {
+    [Users Table\nauth credentials]
+    [Surveys Table\nmetadata & refs]
+    [Feedback Table\nuser suggestions]
+  }
+  
+  cloud "AWS S3\nFile Storage" {
+    [JSON Documents\nsurvey data]
+    [PNG Images\nvisualizations]
+  }
+}
+
+' Input flows
+UserInput --> Validation : Raw shot data
+UserFeedback --> APIClient : Feedback text
+AuthData --> APIClient : Login credentials
+
+' Frontend processing
+Validation --> StateManagement : Validated data
+StateManagement --> APIClient : API requests
+APIClient --> StateManagement : API responses
+StateManagement --> UIRendering : State updates
+
+' Frontend to Backend
+APIClient --> RequestVal : HTTP/JSON
+
+' Backend processing flows
+RequestVal --> AuthValidation : Authenticated requests
+RequestVal --> CaveMath : Survey data
+CaveMath --> Visualization : Position data
+CaveMath --> Serialization : Processed results
+Visualization --> Serialization : PNG bytes
+
+' Persistence flows
+AuthValidation --> [Users Table\nauth credentials] : User queries
+Serialization --> [Surveys Table\nmetadata & refs] : Survey metadata
+RequestVal --> [Feedback Table\nuser suggestions] : Feedback storage
+Serialization --> [JSON Documents\nsurvey data] : File upload
+Visualization --> [PNG Images\nvisualizations] : Image upload
+
+' Response flows
+[JSON Documents\nsurvey data] --> APIClient : Public URLs
+[PNG Images\nvisualizations] --> UIRendering : Image display
+[Surveys Table\nmetadata & refs] --> APIClient : Survey listings
+[Feedback Table\nuser suggestions] --> APIClient : Admin feedback
+
+note top of [Cave Survey Math\nCoordinate Transform]
+  Key Algorithms:
+  • shot_to_deltas(): Convert polar → cartesian
+  • build_graph(): Create station adjacency
+  • reduce_graph(): BFS coordinate assignment
+  • Loop closure detection & residuals
+end note
+
+note top of [PostgreSQL\nTransactional Data]
+  ACID Properties:
+  • Consistent user/survey relationships
+  • Referential integrity
+  • Transaction rollback on errors
+  • Concurrent access safety
+end note
+
+note top of [AWS S3\nFile Storage]
+  Object Storage:
+  • Immutable survey snapshots
+  • Public read access
+  • Organized by section/date
+  • CDN-ready delivery
+end note
+
+@enduml

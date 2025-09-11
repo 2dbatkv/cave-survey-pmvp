@@ -1,0 +1,136 @@
+@startuml
+title Cave Mapper - Entity Relationship Diagram
+
+skinparam class {
+  BackgroundColor #F8F9FA
+  BorderColor #6C757D
+  ArrowColor #495057
+}
+
+entity User {
+  * id : INTEGER <<PK>>
+  --
+  * username : VARCHAR(255) <<UK>>
+  * email : VARCHAR(255) <<UK>>
+  * hashed_password : VARCHAR(255)
+  is_active : BOOLEAN = TRUE
+  created_at : TIMESTAMP WITH TIME ZONE
+}
+
+entity Survey {
+  * id : INTEGER <<PK>>
+  --
+  * title : VARCHAR(255)
+  * section : VARCHAR(255)
+  description : TEXT
+  * owner_id : INTEGER <<FK>>
+  created_at : TIMESTAMP WITH TIME ZONE
+  updated_at : TIMESTAMP WITH TIME ZONE
+  --
+  s3_json_key : VARCHAR(255)
+  s3_png_key : VARCHAR(255)
+  json_url : VARCHAR(2048)
+  png_url : VARCHAR(2048)
+  --
+  num_stations : INTEGER
+  num_shots : INTEGER
+  total_slope_distance : FLOAT
+  total_horizontal_distance : FLOAT
+  --
+  min_x : FLOAT
+  max_x : FLOAT
+  min_y : FLOAT  
+  max_y : FLOAT
+  min_z : FLOAT
+  max_z : FLOAT
+}
+
+entity Feedback {
+  * id : INTEGER <<PK>>
+  --
+  * feedback_text : TEXT
+  submitted_at : TIMESTAMP WITH TIME ZONE
+  user_session : VARCHAR(255)
+  category : VARCHAR(100) = 'general'
+  priority : VARCHAR(50) = 'normal'
+  status : VARCHAR(50) = 'new'
+}
+
+' Relationships
+User ||--o{ Survey : owns
+User::id ||--|| Survey::owner_id
+
+' External Data Stores (not tables)
+cloud "AWS S3" {
+  file "JSON Documents" as JSONFiles {
+    origin: {station, x, y, z}
+    shots: [Shot...]
+    stations: [Station...]
+    meta: {stats...}
+    saved_at: timestamp
+    user: username
+  }
+  
+  file "PNG Visualizations" as PNGFiles {
+    Cave survey plot
+    Station positions
+    Shot connections
+    Grid & labels
+  }
+}
+
+' S3 References
+Survey::s3_json_key --> JSONFiles : references
+Survey::s3_png_key --> PNGFiles : references
+Survey::json_url --> JSONFiles : public URL
+Survey::png_url --> PNGFiles : public URL
+
+note right of User
+  **Authentication:**
+  • JWT token-based auth
+  • bcrypt password hashing
+  • Username & email uniqueness
+  • Soft delete via is_active
+end note
+
+note right of Survey
+  **Survey Metadata:**
+  • Complete survey statistics
+  • Bounding box coordinates
+  • S3 file references
+  • Auto-generated timestamps
+  • Owned by authenticated users
+end note
+
+note right of Feedback
+  **Feedback Collection:**
+  • Anonymous submission allowed
+  • Session-based tracking
+  • Categorization for filtering
+  • Priority & status workflow
+  • Admin review system
+end note
+
+note bottom of JSONFiles
+  **S3 Storage Pattern:**
+  section/date/date-username.json
+  section/date/date-username.png
+  
+  **Example:**
+  mammoth_cave/2025-09-11/2025-09-11-johndoe.json
+  mammoth_cave/2025-09-11/2025-09-11-johndoe.png
+end note
+
+' Indexes and Constraints
+note top of Survey
+  **Indexes:**
+  • owner_id (FK index)
+  • section (filtering)
+  • created_at (sorting)
+  
+  **Constraints:**
+  • owner_id → users.id
+  • NOT NULL on required fields
+end note
+
+@enduml

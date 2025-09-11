@@ -1,0 +1,109 @@
+@startuml
+title Cave Mapper - Component Architecture (Detailed)
+
+skinparam componentStyle rectangle
+skinparam backgroundColor #F8F9FA
+skinparam interface {
+  borderColor #6C757D
+  backgroundColor #FFFFFF
+}
+
+package "Frontend (React/Vite)" {
+  component "App.jsx" as App {
+    [Shot Input Grid]
+    [Validation Logic]
+    [API Integration]
+    [Feedback Form]
+    [Image Display]
+  }
+  
+  component "api.js" as ApiClient {
+    [health()]
+    [reduceTraverse()]
+    [plotTraverse()]
+    [submitFeedback()]
+  }
+  
+  component "Environment" as FrontendEnv {
+    [VITE_API_BASE_URL]
+    [Build Configuration]
+  }
+}
+
+package "Backend (FastAPI)" {
+  component "main.py" as MainAPI {
+    [Route Handlers]
+    [CORS Middleware]
+    [Error Handlers]
+    [Health Checks]
+  }
+  
+  component "Cave Survey Engine" as CaveEngine {
+    [shot_to_deltas()]
+    [build_graph()]
+    [reduce_graph()]
+    [plot_graph_png()]
+  }
+  
+  component "auth.py" as Auth {
+    [JWT Token Management]
+    [Password Hashing]
+    [User Authentication]
+  }
+  
+  component "database.py" as Database {
+    [User Model]
+    [Survey Model]
+    [Feedback Model]
+    [SQLAlchemy Session]
+  }
+  
+  component "s3_service.py" as S3Service {
+    [Upload JSON]
+    [Upload PNG]
+    [Generate URLs]
+  }
+  
+  component "models.py" as DataModels {
+    [Pydantic Schemas]
+    [Request/Response Models]
+    [Field Validation]
+  }
+  
+  component "config.py" as Config {
+    [Environment Settings]
+    [Database URLs]
+    [AWS Configuration]
+    [CORS Settings]
+  }
+}
+
+package "External Services" {
+  database "PostgreSQL" as DB
+  cloud "AWS S3" as S3
+  component "Matplotlib" as MPL
+}
+
+' API Client connections
+App --> ApiClient : HTTP requests
+ApiClient --> MainAPI : REST API calls
+
+' Internal backend connections
+MainAPI --> Auth : Authentication
+MainAPI --> Database : ORM queries
+MainAPI --> S3Service : File uploads
+MainAPI --> CaveEngine : Survey processing
+MainAPI --> DataModels : Validation
+MainAPI --> Config : Settings
+
+' External service connections
+Database --> DB : SQL operations
+S3Service --> S3 : Boto3 SDK
+CaveEngine --> MPL : PNG generation
+
+' Configuration flow
+FrontendEnv --> ApiClient : API base URL
+Config --> Database : DB connection
+Config --> S3Service : AWS credentials
+
+@enduml

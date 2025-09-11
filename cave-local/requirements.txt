@@ -12,3 +12,5 @@ python-dotenv
 sqlalchemy
 passlib[bcrypt]
 python-multipart
+ddtrace
+datadog

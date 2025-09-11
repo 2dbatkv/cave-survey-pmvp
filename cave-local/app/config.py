@@ -28,6 +28,13 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = 30
     algorithm: str = "HS256"
     
+    # Datadog
+    datadog_api_key: str = ""
+    datadog_app_key: str = ""
+    dd_service: str = "cave-survey-api"
+    dd_env: str = "production"
+    dd_version: str = "1.0.0"
+    
     @field_validator('allowed_origins')
     @classmethod
     def parse_cors_origins(cls, v):

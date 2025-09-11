@@ -1,0 +1,125 @@
+@startuml
+title Cave Mapper - Deployment Infrastructure
+
+skinparam cloud {
+  BackgroundColor #E8F5E8
+  BorderColor #4CAF50
+}
+
+skinparam node {
+  BackgroundColor #FFF3E0
+  BorderColor #FF9800
+}
+
+skinparam database {
+  BackgroundColor #E3F2FD
+  BorderColor #2196F3
+}
+
+cloud "GitHub" {
+  [Source Repository\ncave-survey-pmvp] as Repo
+  [main branch] as MainBranch
+  [Automated Webhooks] as Webhooks
+}
+
+cloud "Netlify CDN" {
+  [Frontend Build\nVite/React] as Frontend
+  [Static Assets] as Assets
+  [Environment Variables] as NetlifyEnv
+  
+  note right of Frontend
+    URL: glowing-toffee-6552e3.netlify.app
+    Build: cave-frontend/
+    Command: npm run build
+    Publish: dist/
+  end note
+}
+
+cloud "Render" {
+  [Backend Service\nFastAPI/Uvicorn] as Backend
+  [Python Runtime] as Runtime
+  [Environment Variables] as RenderEnv
+  
+  note right of Backend
+    URL: cave-survey-pmvp.onrender.com
+    Build: cave-local/
+    Start: uvicorn app.main:app
+    Auto-deploy: main branch
+  end note
+}
+
+cloud "AWS" {
+  [S3 Bucket\nFile Storage] as S3
+  [IAM Credentials] as IAM
+  
+  note right of S3
+    Public read access
+    Organized structure:
+    section/date/user.json
+    section/date/user.png
+  end note
+}
+
+database "PostgreSQL\nManaged Database" as DB {
+  [Users Table]
+  [Surveys Table] 
+  [Feedback Table]
+}
+
+' Deployment flows
+Repo --> Webhooks : Push to main
+Webhooks --> Frontend : Trigger build
+Webhooks --> Backend : Trigger deploy
+
+' Configuration
+NetlifyEnv --> Frontend : VITE_API_BASE_URL
+RenderEnv --> Backend : Database URL\nAWS credentials\nJWT secrets
+
+' Runtime connections
+Frontend --> Backend : HTTPS API calls
+Backend --> DB : PostgreSQL connection
+Backend --> S3 : Boto3 SDK
+Backend --> IAM : AWS authentication
+
+' Content delivery
+S3 --> Frontend : Public file URLs
+Frontend --> Assets : Static resources
+
+' Environment Variables Detail
+note top of NetlifyEnv
+  **Netlify Environment:**
+  • VITE_API_BASE_URL=https://cave-survey-pmvp.onrender.com
+  • Build triggers on git push
+  • Automatic HTTPS/SSL
+  • Global CDN distribution
+end note
+
+note top of RenderEnv
+  **Render Environment:**
+  • DATABASE_URL (PostgreSQL)
+  • AWS_ACCESS_KEY_ID
+  • AWS_SECRET_ACCESS_KEY
+  • S3_BUCKET_NAME
+  • SECRET_KEY (JWT)
+  • CORS origins
+  • Auto-scaling enabled
+end note
+
+' Security & Performance Notes
+note bottom
+  **Security Measures:**
+  • HTTPS everywhere (TLS 1.3)
+  • JWT token authentication
+  • Environment variable secrets
+  • CORS policy restrictions
+  • SQL injection prevention (ORM)
+  
+  **Performance Features:**
+  • CDN edge caching (Netlify)
+  • Auto-scaling backend (Render)
+  • Connection pooling (PostgreSQL)
+  • Optimized image delivery (S3)
+  • Compressed frontend assets
+end note
+
+@enduml

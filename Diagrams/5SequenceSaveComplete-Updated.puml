@@ -1,0 +1,80 @@
+@startuml
+title Cave Mapper - Complete Survey Save Flow (with Auth & S3)
+
+participant "User" as User
+participant "React Frontend" as Frontend
+participant "FastAPI Backend" as API
+participant "Cave Survey Engine" as Engine
+participant "Matplotlib" as MPL
+participant "AWS S3" as S3
+participant "PostgreSQL DB" as DB
+participant "JWT Service" as JWT
+
+== Survey Data Entry ==
+User -> Frontend: Enter shot data
+Frontend -> Frontend: Validate shots (real-time)
+User -> Frontend: Click "Save Survey"
+
+== Authentication Check ==
+Frontend -> API: POST /save\nAuthorization: Bearer {token}
+API -> JWT: Decode & validate token
+JWT -> API: User details
+alt Token valid
+  API -> API: Proceed with save
+else Token invalid/expired
+  API -> Frontend: 401 Unauthorized
+  Frontend -> User: Redirect to login
+  note right: Flow ends here if not authenticated
+end
+
+== Survey Processing ==
+API -> API: Extract origin station
+API -> Engine: reduce_graph(shots, origin, coordinates)
+Engine -> Engine: Build station graph
+Engine -> Engine: BFS traversal from origin
+Engine -> Engine: Calculate positions & metadata
+Engine -> API: pos, edges, meta
+
+== Generate Visualization ==
+API -> MPL: plot_graph_png(pos, edges)
+MPL -> MPL: Create matplotlib figure
+MPL -> MPL: Draw stations & connections
+MPL -> MPL: Add labels & grid
+MPL -> API: PNG bytes (BytesIO buffer)
+
+== Prepare S3 Keys ==
+API -> API: Generate S3 paths\nsection/{date}/{date}-{username}.json\nsection/{date}/{date}-{username}.png
+
+== S3 Upload ==
+API -> S3: Upload JSON document\n- origin coordinates\n- shot data\n- station positions\n- metadata\n- user info\n- timestamp
+S3 -> API: JSON upload success
+
+API -> S3: Upload PNG visualization
+S3 -> API: PNG upload success
+
+API -> S3: Generate public URLs
+S3 -> API: JSON & PNG URLs
+
+== Database Storage ==
+API -> DB: INSERT INTO surveys\n- title: "section - date"\n- section\n- description\n- owner_id (from JWT)\n- s3_json_key\n- s3_png_key\n- json_url\n- png_url\n- num_stations\n- num_shots\n- total_slope_distance\n- total_horizontal_distance\n- bounding_box (min/max x,y,z)\n- created_at (now())
+
+DB -> API: Survey record created (ID)
+
+== Success Response ==
+API -> Frontend: {\n  "saved": true,\n  "survey_id": 42,\n  "s3_bucket": "...",\n  "json_key": "...",\n  "png_key": "...",\n  "json_url": "https://s3.../survey.json",\n  "png_url": "https://s3.../survey.png",\n  "meta": {...}\n}
+
+Frontend -> User: "Survey saved successfully! ✅"
+Frontend -> User: Display survey metadata
+
+== Error Handling ==
+alt S3 upload fails
+  S3 -> API: Upload error
+  API -> Frontend: {\n    "saved": false,\n    "error": "S3 upload failed: ...",\n    "meta": {...}\n  }
+  Frontend -> User: "Save failed: S3 error"
+else Database save fails
+  DB -> API: SQL error
+  API -> Frontend: 500 Internal Server Error
+  Frontend -> User: "Save failed: Database error"
+end
+
+@enduml

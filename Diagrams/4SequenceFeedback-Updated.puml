@@ -1,0 +1,50 @@
+@startuml
+title Cave Mapper - Feedback Collection Flow
+
+participant "User" as User
+participant "React Frontend" as Frontend
+participant "FastAPI Backend" as API
+participant "PostgreSQL DB" as DB
+
+== Feedback Submission ==
+User -> Frontend: Enter feedback text
+User -> Frontend: Click "Submit Idea"
+Frontend -> Frontend: Validate input (not empty)
+
+Frontend -> API: POST /feedback\n{\n  "feedback_text": "...",\n  "user_session": "session_123",\n  "category": "user_idea"\n}
+
+API -> API: Validate request body
+API -> API: Strip whitespace from text
+
+API -> DB: INSERT INTO feedback\n- feedback_text\n- user_session\n- category ("user_idea")\n- priority ("normal")\n- status ("new")\n- submitted_at (now())
+
+DB -> API: Feedback record created (ID)
+API -> API: Commit transaction
+API -> Frontend: {\n  "success": true,\n  "feedback_id": 5,\n  "message": "Thank you for your feedback!"\n}
+
+Frontend -> Frontend: Clear textarea
+Frontend -> Frontend: Show success message
+Frontend -> User: "Thank you for your feedback!" ✅
+
+== Admin Feedback Review ==
+note over User: Admin wants to review feedback
+User -> Frontend: Navigate to admin endpoint
+Frontend -> API: GET /admin/feedback
+
+API -> DB: SELECT * FROM feedback\nORDER BY submitted_at DESC
+DB -> API: All feedback records
+
+API -> Frontend: {\n  "feedback_count": 5,\n  "feedback": [\n    {\n      "id": 5,\n      "feedback_text": "...",\n      "submitted_at": "2025-09-11T...",\n      "user_session": "...",\n      "category": "user_idea",\n      "priority": "normal",\n      "status": "new"\n    },\n    ...\n  ]\n}
+
+Frontend -> User: Display feedback list\n(sorted by newest first)
+
+== Error Handling ==
+User -> Frontend: Submit empty feedback
+Frontend -> Frontend: Show "Please enter some feedback"
+
+User -> Frontend: Submit valid feedback
+Frontend -> API: POST /feedback (network error)
+API -> Frontend: 500 Internal Server Error
+Frontend -> User: "Error: Failed to submit feedback"
+
+@enduml

@@ -10,6 +10,11 @@ import io, os, math, json
 import logging
 from typing import List
 
+# Datadog APM
+from ddtrace import patch_all, tracer
+from ddtrace.contrib.fastapi import patch as fastapi_patch
+import datadog
+
 # headless backend for matplotlib (avoids GUI/toolkit issues)
 import matplotlib
 matplotlib.use("Agg")
@@ -33,6 +38,28 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
+
+# Initialize Datadog APM
+if settings.datadog_api_key:
+    # Patch all supported libraries
+    patch_all()
+    # Patch FastAPI specifically
+    fastapi_patch()
+    
+    # Configure Datadog
+    datadog.initialize(
+        api_key=settings.datadog_api_key,
+        app_key=settings.datadog_app_key,
+        host_name="render-backend"
+    )
+    
+    # Set service info
+    tracer.set_tags({
+        'service': settings.dd_service,
+        'env': settings.dd_env,
+        'version': settings.dd_version
+    })
+
 app = FastAPI(title=settings.app_name, debug=settings.debug)
 
 # Create database tables on startup

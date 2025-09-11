@@ -1,0 +1,143 @@
+@startuml
+title Cave Mapper - UI/UX User Flow
+
+skinparam backgroundColor #FFFFFF
+skinparam state {
+  BackgroundColor #E3F2FD
+  BorderColor #1976D2
+  ArrowColor #1976D2
+}
+
+[*] --> LandingPage : User visits site
+
+state LandingPage {
+  LandingPage : 🏠 Cave Local Pre-MVP
+  LandingPage : API Connection Status
+  LandingPage : Sample shot data pre-filled
+}
+
+LandingPage --> DataEntry : Ready to use
+
+state DataEntry {
+  DataEntry : 📊 Shot Data Grid
+  DataEntry : • From/To stations
+  DataEntry : • Distance, Azimuth, Inclination  
+  DataEntry : • Real-time validation
+  DataEntry : • Add/Remove shots
+}
+
+state ValidationError {
+  ValidationError : ❌ Input Errors
+  ValidationError : • Required fields missing
+  ValidationError : • Invalid ranges
+  ValidationError : • Fix before proceeding
+}
+
+DataEntry --> ValidationError : Invalid input
+ValidationError --> DataEntry : User corrects
+
+DataEntry --> Processing : Click "Reduce" or "Plot"
+
+state Processing {
+  Processing : ⏳ Backend Processing
+  Processing : • "Reducing..." or "Plotting..."
+  Processing : • Cave survey calculations
+  Processing : • Coordinate transformations
+}
+
+state Results {
+  Results : ✅ Survey Results
+  Results : • Metadata display (JSON)
+  Results : • Cave plot visualization
+  Results : • Station coordinates
+  Results : • Distance calculations
+}
+
+Processing --> Results : Success
+Processing --> ErrorState : Network/Server error
+
+state ErrorState {
+  ErrorState : ❌ Error Display
+  ErrorState : • "Reduce error: ..."
+  ErrorState : • "Plot error: ..."
+  ErrorState : • User can retry
+}
+
+ErrorState --> DataEntry : User fixes & retries
+
+Results --> FeedbackForm : Scroll down
+
+state FeedbackForm {
+  FeedbackForm : 💡 Submit an Idea
+  FeedbackForm : • Textarea for feedback
+  FeedbackForm : • "Submit Idea" button
+  FeedbackForm : • Encouraging text
+}
+
+state FeedbackSubmitting {
+  FeedbackSubmitting : ⏳ Submitting...
+  FeedbackSubmitting : • Button disabled
+  FeedbackSubmitting : • Loading state
+}
+
+state FeedbackSuccess {
+  FeedbackSuccess : ✅ Thank you!
+  FeedbackSuccess : • Success message
+  FeedbackSuccess : • Textarea cleared
+  FeedbackSuccess : • Ready for next feedback
+}
+
+state FeedbackError {
+  FeedbackError : ❌ Submission failed
+  FeedbackError : • Error message
+  FeedbackError : • Textarea preserved
+  FeedbackError : • User can retry
+}
+
+FeedbackForm --> FeedbackSubmitting : Click "Submit Idea"
+FeedbackSubmitting --> FeedbackSuccess : Success
+FeedbackSubmitting --> FeedbackError : Network/Server error
+FeedbackError --> FeedbackForm : User retries
+FeedbackSuccess --> FeedbackForm : User submits more
+
+' Additional flows
+Results --> DataEntry : User modifies data
+FeedbackForm --> DataEntry : Continue working
+
+' Admin flow (separate)
+state AdminAccess {
+  AdminAccess : 🔧 Admin Panel
+  AdminAccess : GET /admin/feedback
+  AdminAccess : • View all submissions
+  AdminAccess : • Ordered by date
+  AdminAccess : • Category & metadata
+}
+
+note right of LandingPage
+  **Key UX Principles:**
+  • Immediate usability (pre-filled data)
+  • Real-time feedback
+  • Clear error messages
+  • Progressive disclosure
+  • Encouragement for feedback
+end note
+
+note right of FeedbackForm
+  **Feedback Design:**
+  • Non-intrusive placement
+  • Friendly, encouraging tone
+  • Simple single-field interface
+  • Immediate confirmation
+  • No authentication required
+end note
+
+note right of Results
+  **Result Presentation:**
+  • Technical data (JSON metadata)
+  • Visual representation (PNG)
+  • Scrollable layout
+  • Maximum width constraints
+  • Professional styling
+end note
+
+@enduml
