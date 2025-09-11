@@ -269,7 +269,7 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = 
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/reduce", response_model=ReduceResponse)
-def reduce_endpoint(trav: TraverseIn, current_user: User = Depends(get_current_active_user)):
+def reduce_endpoint(trav: TraverseIn):
     # pick origin station from the first shot's from_station
     origin_station = trav.shots[0].from_station
     pos, edges, meta = reduce_graph(
@@ -282,7 +282,7 @@ def reduce_endpoint(trav: TraverseIn, current_user: User = Depends(get_current_a
     return {"stations": stations, "meta": meta}
 
 @app.post("/plot")
-def plot_endpoint(trav: TraverseIn, current_user: User = Depends(get_current_active_user)):
+def plot_endpoint(trav: TraverseIn):
     origin_station = trav.shots[0].from_station
     pos, edges, meta = reduce_graph(
         shots=trav.shots,
