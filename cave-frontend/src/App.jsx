@@ -1,6 +1,6 @@
 // src/App.jsx
 import { useMemo, useState } from "react";
-import { health, reduceTraverse, plotTraverse } from "./api";
+import { health, reduceTraverse, plotTraverse, submitFeedback } from "./api";
 
 const AZ_MIN = 0;
 const AZ_MAX = 360;  // open upper bound in normalize, but UI shows 0..360
@@ -41,6 +41,8 @@ export default function App() {
   const [meta, setMeta] = useState(null);
   const [plotUrl, setPlotUrl] = useState(null);
   const [status, setStatus] = useState("");
+  const [feedbackText, setFeedbackText] = useState("");
+  const [feedbackStatus, setFeedbackStatus] = useState("");
 
   const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
   const payload = { origin_x: 0, origin_y: 0, origin_z: 0, section: "demo", shots };
@@ -97,6 +99,22 @@ export default function App() {
       setStatus("Plotted ✅");
     } catch (e) {
       setStatus(`Plot error: ${e}`);
+    }
+  }
+
+  async function onSubmitFeedback() {
+    if (!feedbackText.trim()) {
+      setFeedbackStatus("Please enter some feedback");
+      return;
+    }
+    
+    setFeedbackStatus("Submitting...");
+    try {
+      const result = await submitFeedback(feedbackText.trim());
+      setFeedbackStatus(result.message || "Thank you for your feedback!");
+      setFeedbackText("");
+    } catch (e) {
+      setFeedbackStatus(`Error: ${e}`);
     }
   }
 
@@ -210,6 +228,53 @@ export default function App() {
           <img src={plotUrl} alt="Cave plot" style={{ maxWidth: 700, border: "1px solid #ddd" }} />
         </div>
       )}
+
+      <div style={{ marginTop: 32, padding: 16, background: "#f9f9f9", borderRadius: 8 }}>
+        <h3 style={{ marginTop: 0, marginBottom: 12, color: "#333" }}>Submit an Idea 💡</h3>
+        <p style={{ margin: "0 0 12px 0", fontSize: 14, color: "#666" }}>
+          Help improve CaveMapper! Share your ideas, suggestions, or feedback.
+        </p>
+        <textarea
+          value={feedbackText}
+          onChange={(e) => setFeedbackText(e.target.value)}
+          placeholder="What would you like to see in CaveMapper? Any bugs, features, or improvements you'd suggest?"
+          style={{
+            width: "100%",
+            minHeight: 80,
+            padding: 8,
+            border: "1px solid #ccc",
+            borderRadius: 4,
+            fontFamily: "system-ui",
+            fontSize: 14,
+            resize: "vertical"
+          }}
+        />
+        <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <button
+            onClick={onSubmitFeedback}
+            disabled={!feedbackText.trim()}
+            style={{
+              padding: "8px 16px",
+              background: feedbackText.trim() ? "#007bff" : "#ccc",
+              color: "white",
+              border: "none",
+              borderRadius: 4,
+              cursor: feedbackText.trim() ? "pointer" : "not-allowed",
+              fontWeight: 500
+            }}
+          >
+            Submit Idea
+          </button>
+          {feedbackStatus && (
+            <span style={{ 
+              fontSize: 14, 
+              color: feedbackStatus.includes("Error") ? "#b00020" : "#28a745" 
+            }}>
+              {feedbackStatus}
+            </span>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

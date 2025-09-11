@@ -24,3 +24,17 @@ export async function plotTraverse(payload) {
   const blob = await r.blob();
   return URL.createObjectURL(blob);   // image URL for <img src=...>
 }
+
+export async function submitFeedback(feedbackText) {
+  const r = await fetch(`${API}/feedback`, {
+    method: "POST", 
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      feedback_text: feedbackText,
+      user_session: `session_${Date.now()}`,
+      category: "user_idea"
+    })
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}

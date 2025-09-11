@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 # Local imports
 from .config import get_settings
-from .database import get_db, create_tables, User, Survey
+from .database import get_db, create_tables, User, Survey, Feedback
 from .auth import (
     authenticate_user, create_access_token, get_current_active_user,
     get_password_hash, get_user_by_username
@@ -385,6 +385,37 @@ def save_endpoint(
     except Exception as e:
         logger.error(f"Save endpoint error: {e}")
         raise HTTPException(status_code=500, detail="Failed to save survey data")
+
+@app.post("/feedback")
+def submit_feedback(
+    feedback_data: dict,
+    db: Session = Depends(get_db)
+):
+    try:
+        feedback_text = feedback_data.get("feedback_text", "").strip()
+        if not feedback_text:
+            raise HTTPException(status_code=400, detail="Feedback text is required")
+        
+        feedback = Feedback(
+            feedback_text=feedback_text,
+            user_session=feedback_data.get("user_session", "anonymous"),
+            category=feedback_data.get("category", "general"),
+            priority=feedback_data.get("priority", "normal")
+        )
+        
+        db.add(feedback)
+        db.commit()
+        db.refresh(feedback)
+        
+        return {
+            "success": True,
+            "feedback_id": feedback.id,
+            "message": "Thank you for your feedback!"
+        }
+        
+    except Exception as e:
+        logger.error(f"Feedback endpoint error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to submit feedback")
 
 @app.get("/surveys")
 def list_surveys(

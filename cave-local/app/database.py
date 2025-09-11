@@ -57,6 +57,17 @@ class Survey(Base):
     
     owner = relationship("User", back_populates="surveys")
 
+class Feedback(Base):
+    __tablename__ = "feedback"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    feedback_text = Column(Text, nullable=False)
+    submitted_at = Column(DateTime(timezone=True), server_default=func.now())
+    user_session = Column(String)
+    category = Column(String, default="general")
+    priority = Column(String, default="normal")
+    status = Column(String, default="new")
+
 def get_db():
     db = SessionLocal()
     try:
