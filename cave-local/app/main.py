@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 from datetime import datetime, timedelta
 from collections import deque, defaultdict
 import io, os, math, json
@@ -205,7 +206,7 @@ async def health(db: Session = Depends(get_db)):
     # Check database connection
     db_connected = True
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
     except Exception as e:
         logger.error(f"Database connection failed: {e}")
         db_connected = False
