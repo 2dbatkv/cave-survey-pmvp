@@ -2,8 +2,17 @@ import boto3
 from botocore.client import Config
 from botocore.exceptions import ClientError
 import json
+import time
 from typing import Tuple, Optional
 from .config import get_settings
+
+# Datadog monitoring
+try:
+    from ddtrace import tracer
+    from datadog import statsd
+    DATADOG_AVAILABLE = True
+except ImportError:
+    DATADOG_AVAILABLE = False
 
 settings = get_settings()
 
@@ -22,31 +31,72 @@ class S3Service:
 
     def upload_json(self, key: str, data: dict) -> Tuple[bool, Optional[str]]:
         """Upload JSON data to S3. Returns (success, error_message)"""
-        try:
-            self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=key,
-                Body=json.dumps(data).encode("utf-8"),
-                ContentType="application/json",
-                **({"ACL": "public-read"} if self.public_read else {})
-            )
-            return True, None
-        except ClientError as e:
-            return False, str(e)
+        start_time = time.time()
+        with tracer.trace("s3.upload_json", service="cave-survey-api") as span:
+            try:
+                span.set_tag("s3.bucket", self.bucket_name)
+                span.set_tag("s3.key", key)
+                span.set_tag("s3.operation", "put_object")
+                
+                self.s3_client.put_object(
+                    Bucket=self.bucket_name,
+                    Key=key,
+                    Body=json.dumps(data).encode("utf-8"),
+                    ContentType="application/json",
+                    **({"ACL": "public-read"} if self.public_read else {})
+                )
+                
+                # Datadog metrics
+                if DATADOG_AVAILABLE:
+                    duration = time.time() - start_time
+                    statsd.increment('s3.upload_json.success', tags=[f'bucket:{self.bucket_name}'])
+                    statsd.histogram('s3.upload_json.duration', duration, tags=[f'bucket:{self.bucket_name}'])
+                
+                span.set_tag("s3.success", True)
+                return True, None
+                
+            except ClientError as e:
+                if DATADOG_AVAILABLE:
+                    statsd.increment('s3.upload_json.error', tags=[f'bucket:{self.bucket_name}', f'error:{e.response["Error"]["Code"]}'])
+                span.set_tag("s3.success", False)
+                span.set_tag("error.message", str(e))
+                return False, str(e)
 
     def upload_png(self, key: str, png_bytes: bytes) -> Tuple[bool, Optional[str]]:
         """Upload PNG data to S3. Returns (success, error_message)"""
-        try:
-            self.s3_client.put_object(
-                Bucket=self.bucket_name,
-                Key=key,
-                Body=png_bytes,
-                ContentType="image/png",
-                **({"ACL": "public-read"} if self.public_read else {})
-            )
-            return True, None
-        except ClientError as e:
-            return False, str(e)
+        start_time = time.time()
+        with tracer.trace("s3.upload_png", service="cave-survey-api") as span:
+            try:
+                span.set_tag("s3.bucket", self.bucket_name)
+                span.set_tag("s3.key", key)
+                span.set_tag("s3.operation", "put_object")
+                span.set_tag("s3.content_type", "image/png")
+                
+                self.s3_client.put_object(
+                    Bucket=self.bucket_name,
+                    Key=key,
+                    Body=png_bytes,
+                    ContentType="image/png",
+                    **({"ACL": "public-read"} if self.public_read else {})
+                )
+                
+                # Datadog metrics
+                if DATADOG_AVAILABLE:
+                    duration = time.time() - start_time
+                    statsd.increment('s3.upload_png.success', tags=[f'bucket:{self.bucket_name}'])
+                    statsd.histogram('s3.upload_png.duration', duration, tags=[f'bucket:{self.bucket_name}'])
+                    statsd.histogram('s3.upload_png.size_bytes', len(png_bytes), tags=[f'bucket:{self.bucket_name}'])
+                
+                span.set_tag("s3.success", True)
+                span.set_tag("s3.file_size_bytes", len(png_bytes))
+                return True, None
+                
+            except ClientError as e:
+                if DATADOG_AVAILABLE:
+                    statsd.increment('s3.upload_png.error', tags=[f'bucket:{self.bucket_name}', f'error:{e.response["Error"]["Code"]}'])
+                span.set_tag("s3.success", False)
+                span.set_tag("error.message", str(e))
+                return False, str(e)
 
     def get_url(self, key: str) -> str:
         """Get URL for accessing the object"""
