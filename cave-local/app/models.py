@@ -109,3 +109,4 @@ class HealthResponse(BaseModel):
     timestamp: datetime
     database_connected: bool
     s3_configured: bool
+    datadog_configured: bool = False

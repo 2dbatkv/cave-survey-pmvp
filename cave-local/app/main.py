@@ -241,12 +241,24 @@ async def health(db: Session = Depends(get_db)):
     # Check S3 configuration
     s3_configured = bool(settings.s3_bucket_name and settings.aws_access_key_id)
     
+    # Check Datadog configuration
+    datadog_configured = bool(settings.datadog_api_key)
+    
+    # Test Datadog connection by sending a custom metric
+    if datadog_configured:
+        try:
+            from datadog import statsd
+            statsd.increment('health_check', tags=['service:cave-survey-api'])
+        except Exception as e:
+            logger.error(f"Datadog metric failed: {e}")
+    
     return HealthResponse(
         ok=db_connected and s3_configured,
         service=settings.app_name,
         timestamp=datetime.utcnow(),
         database_connected=db_connected,
-        s3_configured=s3_configured
+        s3_configured=s3_configured,
+        datadog_configured=datadog_configured
     )
 
 @app.post("/register", response_model=Token)
