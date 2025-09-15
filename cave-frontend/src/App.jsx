@@ -43,6 +43,12 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState("");
+  
+  // Paste functionality state
+  const [pasteText, setPasteText] = useState("");
+  const [pasteMode, setPasteMode] = useState(false);
+  const [parseErrors, setParseErrors] = useState([]);
+  const [previewShots, setPreviewShots] = useState([]);
 
   const apiBase = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
   const payload = { origin_x: 0, origin_y: 0, origin_z: 0, section: "demo", shots };
@@ -65,6 +71,102 @@ export default function App() {
       ...shots,
       { from_station: `S${n}`, to_station: `S${n + 1}`, slope_distance: 10, azimuth_deg: 0, inclination_deg: 0 },
     ]);
+  }
+
+  // Paste functionality functions
+  function parseTextData(text) {
+    const lines = text.trim().split('\n');
+    const parsed = [];
+    const errors = [];
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      // Skip empty lines and comments
+      if (!line || line.startsWith('#') || line.startsWith(';') || line.startsWith('//')) {
+        continue;
+      }
+      
+      try {
+        const shot = parseLine(line, i + 1);
+        if (shot) {
+          const validationErrors = validateShot(shot);
+          if (validationErrors.length === 0) {
+            parsed.push(shot);
+          } else {
+            errors.push(`Line ${i + 1}: ${validationErrors.join(', ')}`);
+          }
+        }
+      } catch (error) {
+        errors.push(`Line ${i + 1}: Invalid format - ${error.message}`);
+      }
+    }
+    
+    return { shots: parsed, errors };
+  }
+
+  function parseLine(line, lineNumber) {
+    // Try JSON format first
+    if (line.startsWith('{')) {
+      try {
+        return JSON.parse(line);
+      } catch (e) {
+        throw new Error('Invalid JSON format');
+      }
+    }
+    
+    // Parse space/tab/comma separated values
+    const parts = line.split(/[\s,]+/).filter(part => part.trim() !== '');
+    
+    if (parts.length < 5) {
+      throw new Error('Expected 5 values: from_station to_station distance azimuth inclination');
+    }
+    
+    const [from_station, to_station, distance, azimuth, inclination] = parts;
+    
+    return {
+      from_station: from_station.trim(),
+      to_station: to_station.trim(),
+      slope_distance: toNum(distance),
+      azimuth_deg: normalizeAzimuth(toNum(azimuth.replace(/[°'"].*/, ''))), // Remove degree symbols
+      inclination_deg: clampInclination(toNum(inclination.replace(/[°'"].*/, '')))
+    };
+  }
+
+  function handlePasteTextChange(e) {
+    const text = e.target.value;
+    setPasteText(text);
+    
+    if (text.trim()) {
+      const result = parseTextData(text);
+      setPreviewShots(result.shots);
+      setParseErrors(result.errors);
+    } else {
+      setPreviewShots([]);
+      setParseErrors([]);
+    }
+  }
+
+  function addParsedShots(replaceAll = false) {
+    if (replaceAll) {
+      setShots(previewShots);
+    } else {
+      setShots(prev => [...prev, ...previewShots]);
+    }
+    
+    // Clear paste area
+    setPasteText("");
+    setPreviewShots([]);
+    setParseErrors([]);
+    setPasteMode(false);
+    
+    setStatus(`Added ${previewShots.length} shots from pasted data`);
+  }
+
+  function clearPasteData() {
+    setPasteText("");
+    setPreviewShots([]);
+    setParseErrors([]);
   }
 
   async function onHealth() {
@@ -199,6 +301,152 @@ export default function App() {
           )}
         </div>
       ))}
+
+      {/* Paste Data Section */}
+      <div style={{ marginTop: 20, marginBottom: 20, padding: 15, border: '1px solid #ddd', borderRadius: 6, backgroundColor: '#f9f9f9' }}>
+        <div style={{ marginBottom: 10 }}>
+          <button 
+            onClick={() => setPasteMode(!pasteMode)}
+            style={{ marginRight: 10, padding: '6px 12px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: 4, cursor: 'pointer', fontSize: 14 }}
+          >
+            {pasteMode ? 'Hide' : 'Paste Survey Data'}
+          </button>
+          <span style={{ fontSize: 14, color: '#666' }}>
+            Bulk import cave survey data from text
+          </span>
+        </div>
+        
+        {pasteMode && (
+          <div>
+            <div style={{ marginBottom: 10 }}>
+              <label style={{ display: 'block', marginBottom: 5, fontWeight: 600, fontSize: 14 }}>
+                Paste cave survey data (multiple formats supported):
+              </label>
+              <textarea
+                value={pasteText}
+                onChange={handlePasteTextChange}
+                placeholder={`Supported formats:
+
+Space/tab separated:
+S0 S1 2.5 90 0
+S1 S2 10 0 0
+
+Comma separated:
+S0,S1,2.5,90,0
+S1,S2,10,0,0
+
+JSON format:
+{"from_station": "S0", "to_station": "S1", "slope_distance": 2.5, "azimuth_deg": 90, "inclination_deg": 0}
+
+Comments (lines starting with # ; //) are ignored`}
+                style={{ 
+                  width: '100%', 
+                  height: 120, 
+                  padding: 8, 
+                  border: '1px solid #ccc', 
+                  borderRadius: 4,
+                  fontFamily: 'monospace',
+                  fontSize: 12,
+                  resize: 'vertical'
+                }}
+              />
+            </div>
+            
+            {/* Parse Errors */}
+            {parseErrors.length > 0 && (
+              <div style={{ marginBottom: 10, padding: 8, backgroundColor: '#ffebee', border: '1px solid #ffcdd2', borderRadius: 4 }}>
+                <strong style={{ color: '#c62828', fontSize: 14 }}>Parse Errors:</strong>
+                <ul style={{ margin: '4px 0', paddingLeft: 16 }}>
+                  {parseErrors.map((error, idx) => (
+                    <li key={idx} style={{ color: '#c62828', fontSize: 13 }}>{error}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            
+            {/* Preview Table */}
+            {previewShots.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <strong style={{ color: '#2e7d32', fontSize: 14 }}>Preview ({previewShots.length} shots parsed):</strong>
+                <div style={{ maxHeight: 120, overflowY: 'auto', border: '1px solid #ddd', borderRadius: 4, marginTop: 4 }}>
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                    <thead style={{ backgroundColor: '#f5f5f5', position: 'sticky', top: 0 }}>
+                      <tr>
+                        <th style={{ padding: 4, border: '1px solid #ddd', textAlign: 'left' }}>From</th>
+                        <th style={{ padding: 4, border: '1px solid #ddd', textAlign: 'left' }}>To</th>
+                        <th style={{ padding: 4, border: '1px solid #ddd', textAlign: 'left' }}>Distance</th>
+                        <th style={{ padding: 4, border: '1px solid #ddd', textAlign: 'left' }}>Azimuth</th>
+                        <th style={{ padding: 4, border: '1px solid #ddd', textAlign: 'left' }}>Inclination</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {previewShots.map((shot, idx) => (
+                        <tr key={idx}>
+                          <td style={{ padding: 4, border: '1px solid #ddd' }}>{shot.from_station}</td>
+                          <td style={{ padding: 4, border: '1px solid #ddd' }}>{shot.to_station}</td>
+                          <td style={{ padding: 4, border: '1px solid #ddd' }}>{shot.slope_distance}</td>
+                          <td style={{ padding: 4, border: '1px solid #ddd' }}>{shot.azimuth_deg}°</td>
+                          <td style={{ padding: 4, border: '1px solid #ddd' }}>{shot.inclination_deg}°</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+            
+            {/* Action Buttons */}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <button
+                onClick={() => addParsedShots(false)}
+                disabled={previewShots.length === 0}
+                style={{ 
+                  padding: '6px 12px', 
+                  backgroundColor: previewShots.length > 0 ? '#28a745' : '#ccc', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: 4, 
+                  cursor: previewShots.length > 0 ? 'pointer' : 'not-allowed',
+                  fontSize: 13
+                }}
+              >
+                Add to Existing ({previewShots.length})
+              </button>
+              
+              <button
+                onClick={() => addParsedShots(true)}
+                disabled={previewShots.length === 0}
+                style={{ 
+                  padding: '6px 12px', 
+                  backgroundColor: previewShots.length > 0 ? '#dc3545' : '#ccc', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: 4, 
+                  cursor: previewShots.length > 0 ? 'pointer' : 'not-allowed',
+                  fontSize: 13
+                }}
+              >
+                Replace All
+              </button>
+              
+              <button
+                onClick={clearPasteData}
+                style={{ 
+                  padding: '6px 12px', 
+                  backgroundColor: '#6c757d', 
+                  color: 'white', 
+                  border: 'none', 
+                  borderRadius: 4, 
+                  cursor: 'pointer',
+                  fontSize: 13
+                }}
+              >
+                Clear
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <div style={{ marginTop: 8, marginBottom: 16 }}>
         <button onClick={addShot}>+ Add shot</button>
