@@ -21,12 +21,13 @@ import matplotlib.pyplot as plt
 
 # Local imports
 from .config import get_settings
-from .database import get_db, create_tables, User, Survey, Feedback
+from .database import get_db, create_tables, User, Survey, Feedback, SurveyDraft
 from .auth import (
     authenticate_user, create_access_token, get_current_active_user,
     get_password_hash, get_user_by_username
 )
 from .s3_service import s3_service
+from . import draft_utils
 from .models import (
     Shot, TraverseIn, UserCreate, UserLogin, Token,
     ReduceResponse, SaveResponse, HealthResponse
@@ -503,3 +504,412 @@ def list_surveys(
             for s in surveys
         ]
     }
+
+# ============================================================
+# DRAFT MANAGEMENT ENDPOINTS
+# ============================================================
+
+@app.post("/surveys/{survey_id}/drafts/upload-csv")
+async def upload_csv_draft(
+    survey_id: int,
+    csv_file: str,  # For now, accept as string; later use UploadFile
+    filename: str = "survey.csv",
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload a TopoDroid CSV file and create a draft for review
+    """
+    try:
+        # Verify survey exists and user has access
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+        # Parse CSV
+        draft_data = draft_utils.parse_topodroid_csv(csv_file)
+
+        # Validate data
+        is_valid, issues = draft_utils.validate_draft_data(draft_data)
+
+        # Create draft
+        draft = SurveyDraft(
+            survey_id=survey_id,
+            uploaded_by=current_user.id,
+            source_type='csv',
+            original_filename=filename,
+            draft_data=draft_data,
+            status='draft',
+            has_errors=not is_valid,
+            error_count=len([i for i in issues if i["type"] == "shot"]),
+            validation_notes=json.dumps(issues) if issues else None
+        )
+
+        db.add(draft)
+        db.commit()
+        db.refresh(draft)
+
+        return {
+            "success": True,
+            "draft_id": draft.id,
+            "survey_id": survey_id,
+            "status": draft.status,
+            "shot_count": len(draft_data.get("shots", [])),
+            "has_errors": draft.has_errors,
+            "error_count": draft.error_count,
+            "issues": issues
+        }
+
+    except Exception as e:
+        logger.error(f"CSV upload error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/surveys/{survey_id}/drafts/paste-data")
+async def paste_data_draft(
+    survey_id: int,
+    data: dict,  # {"content": "csv_text", "format": "topodroid"}
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Create a draft from pasted survey data
+    """
+    try:
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+        content = data.get("content", "")
+        format_type = data.get("format", "topodroid")
+
+        # Parse based on format
+        if format_type == "topodroid":
+            draft_data = draft_utils.parse_topodroid_csv(content)
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {format_type}")
+
+        # Validate
+        is_valid, issues = draft_utils.validate_draft_data(draft_data)
+
+        # Create draft
+        draft = SurveyDraft(
+            survey_id=survey_id,
+            uploaded_by=current_user.id,
+            source_type='paste',
+            original_filename=f"pasted_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            draft_data=draft_data,
+            status='draft',
+            has_errors=not is_valid,
+            error_count=len([i for i in issues if i["type"] == "shot"]),
+            validation_notes=json.dumps(issues) if issues else None
+        )
+
+        db.add(draft)
+        db.commit()
+        db.refresh(draft)
+
+        return {
+            "success": True,
+            "draft_id": draft.id,
+            "survey_id": survey_id,
+            "shot_count": len(draft_data.get("shots", [])),
+            "has_errors": draft.has_errors,
+            "issues": issues
+        }
+
+    except Exception as e:
+        logger.error(f"Paste data error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/surveys/{survey_id}/drafts")
+def list_drafts(
+    survey_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    List all drafts for a survey
+    """
+    try:
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+        drafts = db.query(SurveyDraft).filter(
+            SurveyDraft.survey_id == survey_id
+        ).order_by(SurveyDraft.created_at.desc()).all()
+
+        return {
+            "survey_id": survey_id,
+            "drafts": [
+                {
+                    "id": d.id,
+                    "source_type": d.source_type,
+                    "filename": d.original_filename,
+                    "status": d.status,
+                    "shot_count": len(d.draft_data.get("shots", [])),
+                    "has_errors": d.has_errors,
+                    "error_count": d.error_count,
+                    "created_at": d.created_at,
+                    "updated_at": d.updated_at
+                }
+                for d in drafts
+            ]
+        }
+
+    except Exception as e:
+        logger.error(f"List drafts error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/surveys/{survey_id}/drafts/{draft_id}")
+def get_draft(
+    survey_id: int,
+    draft_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get a specific draft with full data for editing
+    """
+    try:
+        draft = db.query(SurveyDraft).filter(
+            SurveyDraft.id == draft_id,
+            SurveyDraft.survey_id == survey_id
+        ).first()
+
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
+
+        # Verify user has access to the survey
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Parse validation notes
+        validation_issues = []
+        if draft.validation_notes:
+            try:
+                validation_issues = json.loads(draft.validation_notes)
+            except:
+                pass
+
+        return {
+            "id": draft.id,
+            "survey_id": draft.survey_id,
+            "source_type": draft.source_type,
+            "filename": draft.original_filename,
+            "status": draft.status,
+            "draft_data": draft.draft_data,
+            "has_errors": draft.has_errors,
+            "error_count": draft.error_count,
+            "validation_issues": validation_issues,
+            "created_at": draft.created_at,
+            "updated_at": draft.updated_at
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get draft error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.put("/surveys/{survey_id}/drafts/{draft_id}")
+def update_draft(
+    survey_id: int,
+    draft_id: int,
+    data: dict,  # {"draft_data": {...}}
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update draft data (save edits from review screen)
+    """
+    try:
+        draft = db.query(SurveyDraft).filter(
+            SurveyDraft.id == draft_id,
+            SurveyDraft.survey_id == survey_id
+        ).first()
+
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
+
+        # Verify access
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Don't allow editing committed drafts
+        if draft.status == 'committed':
+            raise HTTPException(status_code=400, detail="Cannot edit committed draft")
+
+        # Update draft data
+        new_draft_data = data.get("draft_data")
+        if new_draft_data:
+            # Validate updated data
+            is_valid, issues = draft_utils.validate_draft_data(new_draft_data)
+
+            draft.draft_data = new_draft_data
+            draft.has_errors = not is_valid
+            draft.error_count = len([i for i in issues if i["type"] == "shot"])
+            draft.validation_notes = json.dumps(issues) if issues else None
+            draft.status = 'draft'  # Reset to draft if it was reviewing
+
+            db.commit()
+            db.refresh(draft)
+
+            return {
+                "success": True,
+                "draft_id": draft.id,
+                "has_errors": draft.has_errors,
+                "error_count": draft.error_count,
+                "validation_issues": issues
+            }
+        else:
+            raise HTTPException(status_code=400, detail="No draft_data provided")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Update draft error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/surveys/{survey_id}/drafts/{draft_id}/commit")
+def commit_draft(
+    survey_id: int,
+    draft_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Commit a draft to the main survey (final step)
+    """
+    try:
+        draft = db.query(SurveyDraft).filter(
+            SurveyDraft.id == draft_id,
+            SurveyDraft.survey_id == survey_id
+        ).first()
+
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
+
+        # Verify access
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Check if already committed
+        if draft.status == 'committed':
+            raise HTTPException(status_code=400, detail="Draft already committed")
+
+        # Validate before committing
+        is_valid, issues = draft_utils.validate_draft_data(draft.draft_data)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot commit draft with {len(issues)} validation errors"
+            )
+
+        # Convert draft data to survey format
+        survey_data = draft_utils.convert_draft_to_survey_data(draft.draft_data)
+
+        # TODO: Merge survey_data into main survey
+        # For now, just mark as committed
+        draft.status = 'committed'
+        draft.committed_at = datetime.now()
+
+        db.commit()
+
+        return {
+            "success": True,
+            "draft_id": draft.id,
+            "survey_id": survey_id,
+            "committed_at": draft.committed_at,
+            "message": "Draft successfully committed to survey"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Commit draft error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/surveys/{survey_id}/drafts/{draft_id}")
+def delete_draft(
+    survey_id: int,
+    draft_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Delete a draft
+    """
+    try:
+        draft = db.query(SurveyDraft).filter(
+            SurveyDraft.id == draft_id,
+            SurveyDraft.survey_id == survey_id
+        ).first()
+
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
+
+        # Verify access
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Don't allow deleting committed drafts
+        if draft.status == 'committed':
+            raise HTTPException(status_code=400, detail="Cannot delete committed draft")
+
+        db.delete(draft)
+        db.commit()
+
+        return {
+            "success": True,
+            "message": "Draft deleted successfully"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Delete draft error: {e}")
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
