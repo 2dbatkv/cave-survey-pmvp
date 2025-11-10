@@ -27,13 +27,82 @@ export async function plotTraverse(payload) {
 
 export async function submitFeedback(feedbackText) {
   const r = await fetch(`${API}/feedback`, {
-    method: "POST", 
+    method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       feedback_text: feedbackText,
       user_session: `session_${Date.now()}`,
       category: "user_idea"
     })
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+// ============================================================
+// DRAFT MANAGEMENT APIs
+// ============================================================
+
+export async function uploadCSVDraft(surveyId, csvContent, filename) {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/upload-csv`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      csv_file: csvContent,
+      filename: filename
+    })
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function pasteDraft(surveyId, content, format = "topodroid") {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/paste-data`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      content: content,
+      format: format
+    })
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function listDrafts(surveyId) {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts`);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function getDraft(surveyId, draftId) {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}`);
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function updateDraft(surveyId, draftId, draftData) {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draft_data: draftData })
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function commitDraft(surveyId, draftId) {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" }
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function deleteDraft(surveyId, draftId) {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}`, {
+    method: "DELETE"
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();

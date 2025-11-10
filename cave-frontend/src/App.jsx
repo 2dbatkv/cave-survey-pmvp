@@ -1,6 +1,7 @@
 // src/App.jsx
 import { useMemo, useState } from "react";
 import { health, reduceTraverse, plotTraverse, submitFeedback } from "./api";
+import DraftManager from "./components/DraftManager";
 
 const AZ_MIN = 0;
 const AZ_MAX = 360;  // open upper bound in normalize, but UI shows 0..360
@@ -35,6 +36,9 @@ function validateShot(s) {
 }
 
 export default function App() {
+  // Tab navigation
+  const [activeTab, setActiveTab] = useState("drafts"); // 'drafts' | 'manual'
+
   const [shots, setShots] = useState([
     { from_station: "S0", to_station: "S1", slope_distance: 12.5, azimuth_deg: 90, inclination_deg: 0 },
   ]);
@@ -43,7 +47,7 @@ export default function App() {
   const [status, setStatus] = useState("");
   const [feedbackText, setFeedbackText] = useState("");
   const [feedbackStatus, setFeedbackStatus] = useState("");
-  
+
   // Paste functionality state
   const [pasteText, setPasteText] = useState("");
   const [pasteMode, setPasteMode] = useState(false);
@@ -232,6 +236,47 @@ export default function App() {
     <div style={{ padding: 24, fontFamily: "system-ui" }}>
       <h1 style={{ marginBottom: 8 }}>Cave Local Pre-MVP</h1>
       <p style={{ color: "#666", marginTop: 0, marginBottom: 16 }}>API: {apiBase}</p>
+
+      {/* Tab Navigation */}
+      <div style={{ marginBottom: 20, borderBottom: "2px solid #ddd" }}>
+        <button
+          onClick={() => setActiveTab("drafts")}
+          style={{
+            padding: "10px 20px",
+            marginRight: "10px",
+            backgroundColor: activeTab === "drafts" ? "#0066cc" : "transparent",
+            color: activeTab === "drafts" ? "white" : "#333",
+            border: "none",
+            borderBottom: activeTab === "drafts" ? "3px solid #0066cc" : "none",
+            cursor: "pointer",
+            fontWeight: "bold",
+            fontSize: "16px",
+          }}
+        >
+          📂 Manage Drafts
+        </button>
+        <button
+          onClick={() => setActiveTab("manual")}
+          style={{
+            padding: "10px 20px",
+            backgroundColor: activeTab === "manual" ? "#0066cc" : "transparent",
+            color: activeTab === "manual" ? "white" : "#333",
+            border: "none",
+            borderBottom: activeTab === "manual" ? "3px solid #0066cc" : "none",
+            cursor: "pointer",
+            fontWeight: "bold",
+            fontSize: "16px",
+          }}
+        >
+          ✍️ Manual Entry
+        </button>
+      </div>
+
+      {/* Conditional Content Based on Active Tab */}
+      {activeTab === "drafts" ? (
+        <DraftManager surveyId={1} />
+      ) : (
+        <div>
 
       {shots.map((s, i) => (
         <div key={i} style={{ marginBottom: 4 }}>
@@ -523,6 +568,8 @@ Comments (lines starting with # ; //) are ignored`}
           )}
         </div>
       </div>
+        </div>
+      )}
     </div>
   );
 }
