@@ -13,29 +13,30 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Configure database URL with SSL parameters for production PostgreSQL (e.g., Render)
-database_url = settings.database_url
-
 # Sanitize URL for logging (hide password)
 def sanitize_url(url):
     return re.sub(r'://([^:]+):([^@]+)@', r'://\1:****@', url)
 
+# Configure database URL and connection args for production PostgreSQL (e.g., Render)
+database_url = settings.database_url
+connect_args = {}
+
 logger.info(f"Original database URL: {sanitize_url(database_url)}")
 
 if database_url.startswith("postgresql://") or database_url.startswith("postgres://"):
-    # Render PostgreSQL requires SSL - append sslmode parameter to URL if not present
-    if "sslmode=" not in database_url:
-        separator = "&" if "?" in database_url else "?"
-        database_url = f"{database_url}{separator}sslmode=require"
-        logger.info(f"Modified database URL with SSL: {sanitize_url(database_url)}")
-    else:
-        logger.info(f"Database URL already contains sslmode parameter: {sanitize_url(database_url)}")
+    # Render PostgreSQL requires SSL with specific connection parameters
+    # Use connect_args to pass SSL parameters directly to psycopg2
+    connect_args = {
+        "sslmode": "require"
+    }
+    logger.info(f"Configuring PostgreSQL with connect_args: {connect_args}")
 
 # Create engine with connection pool settings for better reliability
 try:
     logger.info("Creating SQLAlchemy engine...")
     engine = create_engine(
         database_url,
+        connect_args=connect_args,
         pool_pre_ping=True,
         pool_recycle=300,
         pool_size=10,
