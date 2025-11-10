@@ -3,39 +3,26 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from sqlalchemy.sql import func
 from datetime import datetime
-import ssl as ssl_module
 from .config import get_settings
 
 settings = get_settings()
 
-# Configure SSL for production PostgreSQL (e.g., Render)
-connect_args = {}
-engine_kwargs = {}
+# Configure database URL with SSL parameters for production PostgreSQL (e.g., Render)
+database_url = settings.database_url
 
-if settings.database_url.startswith("postgresql://") or settings.database_url.startswith("postgres://"):
-    # Render PostgreSQL requires SSL but uses certificates that need relaxed verification
-    # Create SSL context that doesn't verify certificates
-    try:
-        ssl_context = ssl_module.create_default_context()
-        ssl_context.check_hostname = False
-        ssl_context.verify_mode = ssl_module.CERT_NONE
-        connect_args = {"ssl_context": ssl_context}
-    except Exception:
-        # Fallback to basic SSL mode if SSL context creation fails
-        connect_args = {"sslmode": "require"}
+if database_url.startswith("postgresql://") or database_url.startswith("postgres://"):
+    # Render PostgreSQL requires SSL - append sslmode parameter to URL if not present
+    if "sslmode=" not in database_url:
+        separator = "&" if "?" in database_url else "?"
+        database_url = f"{database_url}{separator}sslmode=require"
 
-    # Additional connection pool settings for better reliability
-    engine_kwargs = {
-        "pool_pre_ping": True,
-        "pool_recycle": 300,
-        "pool_size": 10,
-        "max_overflow": 20
-    }
-
+# Create engine with connection pool settings for better reliability
 engine = create_engine(
-    settings.database_url,
-    connect_args=connect_args,
-    **engine_kwargs
+    database_url,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    pool_size=10,
+    max_overflow=20
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
