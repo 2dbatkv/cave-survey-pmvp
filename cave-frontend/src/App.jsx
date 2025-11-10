@@ -1,7 +1,8 @@
 // src/App.jsx
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { health, reduceTraverse, plotTraverse, submitFeedback } from "./api";
 import DraftManager from "./components/DraftManager";
+import Auth from "./components/Auth";
 
 const AZ_MIN = 0;
 const AZ_MAX = 360;  // open upper bound in normalize, but UI shows 0..360
@@ -36,6 +37,20 @@ function validateShot(s) {
 }
 
 export default function App() {
+  // Authentication state
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [username, setUsername] = useState(null);
+
+  // Check for existing authentication on mount
+  useEffect(() => {
+    const token = localStorage.getItem("auth_token");
+    const savedUsername = localStorage.getItem("username");
+    if (token && savedUsername) {
+      setIsAuthenticated(true);
+      setUsername(savedUsername);
+    }
+  }, []);
+
   // Tab navigation
   const [activeTab, setActiveTab] = useState("drafts"); // 'drafts' | 'manual'
 
@@ -224,6 +239,24 @@ export default function App() {
     }
   }
 
+  // Authentication handlers
+  const handleAuthenticated = ({ token, username: user }) => {
+    setIsAuthenticated(true);
+    setUsername(user);
+  };
+
+  const handleLogout = () => {
+    localStorage.removeItem("auth_token");
+    localStorage.removeItem("username");
+    setIsAuthenticated(false);
+    setUsername(null);
+  };
+
+  // Show auth screen if not authenticated
+  if (!isAuthenticated) {
+    return <Auth onAuthenticated={handleAuthenticated} />;
+  }
+
   const rowStyle = {
     display: "grid",
     gridTemplateColumns: "repeat(5, minmax(120px, 1fr))",
@@ -234,8 +267,29 @@ export default function App() {
 
   return (
     <div style={{ padding: 24, fontFamily: "system-ui" }}>
-      <h1 style={{ marginBottom: 8 }}>Cave Local Pre-MVP</h1>
-      <p style={{ color: "#666", marginTop: 0, marginBottom: 16 }}>API: {apiBase}</p>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div>
+          <h1 style={{ marginBottom: 8 }}>Cave Local Pre-MVP</h1>
+          <p style={{ color: "#666", marginTop: 0, marginBottom: 0 }}>API: {apiBase}</p>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <p style={{ margin: 0, marginBottom: 8, color: "#666" }}>Logged in as: <strong>{username}</strong></p>
+          <button
+            onClick={handleLogout}
+            style={{
+              padding: "8px 16px",
+              backgroundColor: "#dc3545",
+              color: "white",
+              border: "none",
+              borderRadius: "4px",
+              cursor: "pointer",
+              fontSize: "14px",
+            }}
+          >
+            Logout
+          </button>
+        </div>
+      </div>
 
       {/* Tab Navigation */}
       <div style={{ marginBottom: 20, borderBottom: "2px solid #ddd" }}>

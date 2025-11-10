@@ -1,5 +1,15 @@
 const API = (import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000").replace(/\/+$/,"");
 
+// Helper function to get auth headers
+function getAuthHeaders() {
+  const token = localStorage.getItem("auth_token");
+  const headers = { "Content-Type": "application/json" };
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+  return headers;
+}
+
 export async function health() {
   const r = await fetch(`${API}/`);
   if (!r.ok) throw new Error("health failed");
@@ -46,7 +56,7 @@ export async function submitFeedback(feedbackText) {
 export async function uploadCSVDraft(surveyId, csvContent, filename) {
   const r = await fetch(`${API}/surveys/${surveyId}/drafts/upload-csv`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       csv_file: csvContent,
       filename: filename
@@ -59,7 +69,7 @@ export async function uploadCSVDraft(surveyId, csvContent, filename) {
 export async function pasteDraft(surveyId, content, format = "topodroid") {
   const r = await fetch(`${API}/surveys/${surveyId}/drafts/paste-data`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({
       content: content,
       format: format
@@ -70,13 +80,17 @@ export async function pasteDraft(surveyId, content, format = "topodroid") {
 }
 
 export async function listDrafts(surveyId) {
-  const r = await fetch(`${API}/surveys/${surveyId}/drafts`);
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts`, {
+    headers: getAuthHeaders()
+  });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
 
 export async function getDraft(surveyId, draftId) {
-  const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}`);
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}`, {
+    headers: getAuthHeaders()
+  });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -84,7 +98,7 @@ export async function getDraft(surveyId, draftId) {
 export async function updateDraft(surveyId, draftId, draftData) {
   const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}`, {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
+    headers: getAuthHeaders(),
     body: JSON.stringify({ draft_data: draftData })
   });
   if (!r.ok) throw new Error(await r.text());
@@ -94,7 +108,7 @@ export async function updateDraft(surveyId, draftId, draftData) {
 export async function commitDraft(surveyId, draftId) {
   const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}/commit`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" }
+    headers: getAuthHeaders()
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
@@ -102,7 +116,8 @@ export async function commitDraft(surveyId, draftId) {
 
 export async function deleteDraft(surveyId, draftId) {
   const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}`, {
-    method: "DELETE"
+    method: "DELETE",
+    headers: getAuthHeaders()
   });
   if (!r.ok) throw new Error(await r.text());
   return r.json();
