@@ -7,7 +7,13 @@ from .config import get_settings
 
 settings = get_settings()
 
-engine = create_engine(settings.database_url)
+# Configure SSL for production PostgreSQL (e.g., Render)
+connect_args = {}
+if settings.database_url.startswith("postgresql://") or settings.database_url.startswith("postgres://"):
+    # For production databases that require SSL
+    connect_args = {"sslmode": "require"}
+
+engine = create_engine(settings.database_url, connect_args=connect_args)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
