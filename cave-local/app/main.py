@@ -270,9 +270,24 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
             status_code=400,
             detail="Username already registered"
         )
-    
+
+    # Truncate password to 72 bytes before hashing (bcrypt limitation)
+    password_to_hash = user.password
+    password_bytes = password_to_hash.encode('utf-8')
+    if len(password_bytes) > 72:
+        password_bytes = password_bytes[:72]
+        password_to_hash = password_bytes.decode('utf-8', errors='ignore')
+
     # Create new user
-    hashed_password = get_password_hash(user.password)
+    try:
+        hashed_password = get_password_hash(password_to_hash)
+    except ValueError as e:
+        logger.error(f"Password hashing error: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail="Password format invalid. Please use a different password."
+        )
+
     db_user = User(
         username=user.username,
         email=user.email,
@@ -281,13 +296,13 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
     db.add(db_user)
     db.commit()
     db.refresh(db_user)
-    
+
     # Create access token
     access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
     access_token = create_access_token(
         data={"sub": user.username}, expires_delta=access_token_expires
     )
-    
+
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/token", response_model=Token)
