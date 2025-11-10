@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Float, DateTime, Text, Boolean, ForeignKey, JSON
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session, relationship
 from sqlalchemy.sql import func
@@ -94,12 +94,13 @@ class Survey(Base):
     max_y = Column(Float)
     min_z = Column(Float)
     max_z = Column(Float)
-    
+
     owner = relationship("User", back_populates="surveys")
+    drafts = relationship("SurveyDraft", back_populates="survey")
 
 class Feedback(Base):
     __tablename__ = "feedback"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     feedback_text = Column(Text, nullable=False)
     submitted_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -107,6 +108,37 @@ class Feedback(Base):
     category = Column(String, default="general")
     priority = Column(String, default="normal")
     status = Column(String, default="new")
+
+class SurveyDraft(Base):
+    __tablename__ = "survey_drafts"
+
+    id = Column(Integer, primary_key=True, index=True)
+    survey_id = Column(Integer, ForeignKey("surveys.id"), nullable=False)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+
+    # Source information
+    source_type = Column(String)  # 'csv', 'photo', 'manual', 'paste'
+    source_file = Column(String)  # S3 key or filename
+    original_filename = Column(String)
+
+    # Parsed survey data (editable JSON structure)
+    draft_data = Column(JSON, nullable=False)
+    # Structure: {"metadata": {...}, "shots": [...]}
+
+    # Status tracking
+    status = Column(String, default='draft')  # draft, reviewing, committed, rejected
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), onupdate=func.now())
+    committed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Validation
+    has_errors = Column(Boolean, default=False)
+    validation_notes = Column(Text)
+    error_count = Column(Integer, default=0)
+
+    # Relationships
+    survey = relationship("Survey", back_populates="drafts")
+    # uploader = relationship("User", back_populates="drafts")
 
 def get_db():
     db = SessionLocal()
