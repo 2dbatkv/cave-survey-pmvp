@@ -676,7 +676,17 @@ def list_drafts(
         ).first()
 
         if not survey:
-            raise HTTPException(status_code=404, detail="Survey not found")
+            # Create a default survey for this user
+            survey = Survey(
+                owner_id=current_user.id,
+                name=f"{current_user.username}'s Survey",
+                description="Auto-created survey",
+                location="Unknown"
+            )
+            db.add(survey)
+            db.commit()
+            db.refresh(survey)
+            logger.info(f"Created survey {survey.id} for user {current_user.username}")
 
         drafts = db.query(SurveyDraft).filter(
             SurveyDraft.survey_id == survey_id
