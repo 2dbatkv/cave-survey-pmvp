@@ -527,8 +527,7 @@ def list_surveys(
 @app.post("/surveys/{survey_id}/drafts/upload-csv")
 async def upload_csv_draft(
     survey_id: int,
-    csv_file: str,  # For now, accept as string; later use UploadFile
-    filename: str = "survey.csv",
+    data: dict,
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
@@ -536,14 +535,27 @@ async def upload_csv_draft(
     Upload a TopoDroid CSV file and create a draft for review
     """
     try:
-        # Verify survey exists and user has access
+        csv_file = data.get("csv_file", "")
+        filename = data.get("filename", "survey.csv")
+
+        # Verify survey exists and user has access, or create one
         survey = db.query(Survey).filter(
             Survey.id == survey_id,
             Survey.owner_id == current_user.id
         ).first()
 
         if not survey:
-            raise HTTPException(status_code=404, detail="Survey not found")
+            # Create a default survey for this user
+            survey = Survey(
+                owner_id=current_user.id,
+                name=f"{current_user.username}'s Survey",
+                description="Auto-created survey for draft uploads",
+                location="Unknown"
+            )
+            db.add(survey)
+            db.commit()
+            db.refresh(survey)
+            logger.info(f"Created survey {survey.id} for user {current_user.username}")
 
         # Parse CSV
         draft_data = draft_utils.parse_topodroid_csv(csv_file)
