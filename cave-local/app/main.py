@@ -1149,12 +1149,15 @@ def plot_survey(
         )
 
         # Generate plot
-        png_bytesio = plot_graph_png(positions, edges)
-        png_bytesio.seek(0)  # Ensure buffer is at start
+        png_buffer = plot_graph_png(positions, edges)
+
+        # Read bytes from buffer and create fresh BytesIO for response
+        png_bytes = png_buffer.read()
+        png_buffer.close()
 
         # Return as PNG image
         return StreamingResponse(
-            png_bytesio,
+            io.BytesIO(png_bytes),
             media_type="image/png",
             headers={"Content-Disposition": f"inline; filename=survey_{survey_id}_plot.png"}
         )
