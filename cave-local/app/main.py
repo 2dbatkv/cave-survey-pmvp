@@ -548,9 +548,9 @@ async def upload_csv_draft(
             # Create a default survey for this user
             survey = Survey(
                 owner_id=current_user.id,
-                name=f"{current_user.username}'s Survey",
-                description="Auto-created survey for draft uploads",
-                location="Unknown"
+                title=f"{current_user.username}'s Survey",
+                section="main",
+                description="Auto-created survey for draft uploads"
             )
             db.add(survey)
             db.commit()
@@ -679,9 +679,9 @@ def list_drafts(
             # Create a default survey for this user
             survey = Survey(
                 owner_id=current_user.id,
-                name=f"{current_user.username}'s Survey",
-                description="Auto-created survey",
-                location="Unknown"
+                title=f"{current_user.username}'s Survey",
+                section="main",
+                description="Auto-created survey"
             )
             db.add(survey)
             db.commit()
