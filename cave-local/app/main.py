@@ -1149,7 +1149,7 @@ def plot_survey(
         )
 
         # Generate plot
-        png_bytes = plot_traverse(positions, edges, survey.section)
+        png_bytes = plot_graph_png(positions, edges)
 
         # Return as PNG image
         return StreamingResponse(
