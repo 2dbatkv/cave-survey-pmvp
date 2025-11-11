@@ -1046,10 +1046,10 @@ def reduce_survey(
             raise HTTPException(status_code=400, detail="No survey shots to reduce")
 
         # Convert to format expected by reduce_graph
-        from .models import SurveyShot
+        from .models import Shot
         shot_objects = []
         for s in survey_shots:
-            shot_obj = SurveyShot(
+            shot_obj = Shot(
                 from_station=s['from'],
                 to_station=s['to'],
                 slope_distance=s['distance'],
@@ -1126,10 +1126,10 @@ def plot_survey(
             raise HTTPException(status_code=400, detail="No survey shots to plot")
 
         # Convert to format expected by plot_traverse
-        from .models import SurveyShot
+        from .models import Shot
         shot_objects = []
         for s in survey_shots:
-            shot_obj = SurveyShot(
+            shot_obj = Shot(
                 from_station=s['from'],
                 to_station=s['to'],
                 slope_distance=s['distance'],
