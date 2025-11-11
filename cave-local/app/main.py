@@ -1150,6 +1150,7 @@ def plot_survey(
 
         # Generate plot
         png_bytesio = plot_graph_png(positions, edges)
+        png_bytesio.seek(0)  # Ensure buffer is at start
 
         # Return as PNG image
         return StreamingResponse(
@@ -1163,8 +1164,9 @@ def plot_survey(
     except Exception as e:
         logger.error(f"Plot survey error: {e}")
         import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        tb_str = traceback.format_exc()
+        logger.error(f"Traceback:\n{tb_str}")
+        raise HTTPException(status_code=500, detail=f"{str(e)}\nTraceback: {tb_str}")
 
 
 @app.get("/surveys/{survey_id}/export/{format}")

@@ -1,0 +1,59 @@
+services:
+  # PostgreSQL Database
+  - type: pserv
+    name: cave-survey-db
+    plan: starter
+    databaseName: cave_survey
+    user: cave_user
+
+  # FastAPI Backend
+  - type: web
+    name: cave-survey-api
+    runtime: python
+    plan: starter
+    region: oregon
+    rootDir: cave-local
+    buildCommand: pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    healthCheckPath: /health
+    envVars:
+      - key: APP_NAME
+        value: Cave Survey API
+      - key: DEBUG
+        value: false
+      - key: DATABASE_URL
+        fromDatabase:
+          name: cave-survey-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: 30
+      - key: ALGORITHM
+        value: HS256
+      - key: ALLOWED_ORIGINS
+        value: http://localhost:5173,https://cave-survey.netlify.app
+      # AWS S3 (you'll need to add these manually)
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_DEFAULT_REGION
+        value: us-east-1
+      - key: S3_BUCKET_NAME
+        sync: false
+      - key: S3_PUBLIC_READ
+        value: false
+      - key: PRESIGN_EXPIRE_SECS
+        value: 3600
+      # Datadog (optional - add manually if needed)
+      - key: DATADOG_API_KEY
+        sync: false
+      - key: DATADOG_APP_KEY
+        sync: false
+      - key: DD_SERVICE
+        value: cave-survey-api
+      - key: DD_ENV
+        value: production
+      - key: DD_VERSION
+        value: 1.0.0
