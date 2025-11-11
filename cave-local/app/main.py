@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status
+from fastapi import FastAPI, HTTPException, Depends, status, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -527,7 +527,7 @@ def list_surveys(
 @app.post("/surveys/{survey_id}/drafts/upload-csv")
 async def upload_csv_draft(
     survey_id: int,
-    data: dict,
+    data: dict = Body(...),
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ):
