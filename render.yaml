@@ -9,12 +9,11 @@ services:
   # FastAPI Backend
   - type: web
     name: cave-survey-api
-    runtime: python
+    runtime: docker
     plan: starter
     region: oregon
     rootDir: cave-local
-    buildCommand: apt-get update && apt-get install -y tesseract-ocr tesseract-ocr-eng && pip install --upgrade pip setuptools wheel && pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 2
+    dockerfilePath: ./Dockerfile
     healthCheckPath: /health
     envVars:
       - key: APP_NAME
