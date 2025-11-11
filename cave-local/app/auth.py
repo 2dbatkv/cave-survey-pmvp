@@ -13,19 +13,23 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # Truncate password to 72 bytes for bcrypt compatibility
-    password_bytes = plain_password.encode('utf-8')[:72]
-    # Decode back to string, using 'ignore' to handle any partial multi-byte characters
-    truncated_password = password_bytes.decode('utf-8', errors='ignore')
-    return pwd_context.verify(truncated_password, hashed_password)
+    # Use bcrypt directly to avoid passlib issues
+    import bcrypt
+    try:
+        password_bytes = plain_password.encode('utf-8')
+        hashed_bytes = hashed_password.encode('utf-8')
+        return bcrypt.checkpw(password_bytes, hashed_bytes)
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return False
 
 def get_password_hash(password: str) -> str:
-    # Truncate password to 72 bytes for bcrypt compatibility
-    # This is a standard bcrypt limitation and recommended practice
-    password_bytes = password.encode('utf-8')[:72]
-    # Decode back to string, using 'ignore' to handle any partial multi-byte characters
-    truncated_password = password_bytes.decode('utf-8', errors='ignore')
-    return pwd_context.hash(truncated_password)
+    # Use bcrypt directly to avoid passlib issues
+    import bcrypt
+    password_bytes = password.encode('utf-8')
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(password_bytes, salt)
+    return hashed.decode('utf-8')
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
