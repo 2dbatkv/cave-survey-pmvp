@@ -1063,9 +1063,9 @@ def reduce_survey(
         positions, edges, meta = reduce_graph(
             shots=shot_objects,
             origin_name=origin_station,
-            origin_x=0.0,
-            origin_y=0.0,
-            origin_z=0.0
+            ox=0.0,
+            oy=0.0,
+            oz=0.0
         )
 
         # Update survey metadata
@@ -1143,9 +1143,9 @@ def plot_survey(
         positions, edges, meta = reduce_graph(
             shots=shot_objects,
             origin_name=origin_station,
-            origin_x=0.0,
-            origin_y=0.0,
-            origin_z=0.0
+            ox=0.0,
+            oy=0.0,
+            oz=0.0
         )
 
         # Generate plot
