@@ -7,6 +7,9 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from sqlalchemy.orm import Session
 from .database import get_db, User
 from .config import get_settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
