@@ -48,18 +48,47 @@ def extract_text_from_image(image_bytes: bytes) -> str:
     Returns:
         Extracted text
     """
+    import subprocess
+    import shutil
+    import logging
+
+    logger = logging.getLogger(__name__)
+
     try:
+        # Check if tesseract is installed
+        tesseract_cmd = shutil.which('tesseract')
+        logger.info(f"Tesseract command path: {tesseract_cmd}")
+
+        if tesseract_cmd:
+            # Try to get tesseract version
+            try:
+                result = subprocess.run(['tesseract', '--version'],
+                                      capture_output=True, text=True, timeout=5)
+                logger.info(f"Tesseract version info: {result.stdout}")
+            except Exception as ve:
+                logger.error(f"Failed to get tesseract version: {ve}")
+        else:
+            logger.error("Tesseract not found in PATH")
+            # List what's in PATH
+            import os
+            logger.error(f"PATH: {os.environ.get('PATH', 'NOT SET')}")
+
         # Open image
         image = Image.open(io.BytesIO(image_bytes))
+        logger.info(f"Image opened: size={image.size}, mode={image.mode}")
 
         # Preprocess for better OCR
         processed_image = preprocess_image(image)
+        logger.info(f"Image preprocessed: size={processed_image.size}")
 
         # Run OCR
         text = pytesseract.image_to_string(processed_image)
+        logger.info(f"OCR completed: extracted {len(text)} characters")
 
         return text
     except Exception as e:
+        logger.error(f"OCR failed with error: {str(e)}")
+        logger.exception("Full traceback:")
         raise ValueError(f"OCR failed: {str(e)}")
 
 

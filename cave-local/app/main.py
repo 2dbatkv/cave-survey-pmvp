@@ -264,6 +264,48 @@ async def health(db: Session = Depends(get_db)):
         datadog_configured=datadog_configured
     )
 
+@app.get("/diagnostics/tesseract")
+async def tesseract_diagnostics():
+    """
+    Check if Tesseract OCR is installed and accessible
+    """
+    import subprocess
+    import shutil
+
+    result = {
+        "tesseract_found": False,
+        "tesseract_path": None,
+        "tesseract_version": None,
+        "path_env": os.environ.get('PATH', 'NOT SET'),
+        "error": None
+    }
+
+    try:
+        # Check if tesseract is in PATH
+        tesseract_cmd = shutil.which('tesseract')
+        result["tesseract_path"] = tesseract_cmd
+        result["tesseract_found"] = tesseract_cmd is not None
+
+        if tesseract_cmd:
+            # Try to get version
+            try:
+                version_result = subprocess.run(
+                    ['tesseract', '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                result["tesseract_version"] = version_result.stdout
+            except Exception as ve:
+                result["error"] = f"Failed to get version: {str(ve)}"
+        else:
+            result["error"] = "Tesseract not found in PATH"
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
 @app.post("/register", response_model=Token)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     # Check if user already exists
