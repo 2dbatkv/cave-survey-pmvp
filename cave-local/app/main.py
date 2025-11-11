@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from collections import deque, defaultdict
 import io, os, math, json
 import logging
+from . import export_utils
 from typing import List
 
 # Datadog APM
@@ -949,4 +950,302 @@ def delete_draft(
     except Exception as e:
         logger.error(f"Delete draft error: {e}")
         db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+# ============================================================
+# SURVEY PROCESSING & EXPORT ENDPOINTS
+# ============================================================
+
+@app.get("/surveys/{survey_id}/data")
+def get_survey_data(
+    survey_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Get all committed survey shots for processing/export
+    """
+    try:
+        # Verify survey access
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+        # Get all committed drafts
+        committed_drafts = db.query(SurveyDraft).filter(
+            SurveyDraft.survey_id == survey_id,
+            SurveyDraft.status == 'committed'
+        ).order_by(SurveyDraft.committed_at).all()
+
+        # Extract and combine all shots
+        all_shots = export_utils.get_survey_shots_from_drafts(committed_drafts)
+
+        # Separate survey shots and splays
+        survey_shots = [s for s in all_shots if s.get('type') == 'survey']
+        splays = [s for s in all_shots if s.get('type') == 'splay']
+
+        return {
+            "survey_id": survey_id,
+            "survey_name": survey.title,
+            "section": survey.section,
+            "total_shots": len(all_shots),
+            "survey_shots": len(survey_shots),
+            "splays": len(splays),
+            "committed_drafts": len(committed_drafts),
+            "shots": all_shots,
+            "metadata": {
+                "created_at": survey.created_at,
+                "updated_at": survey.updated_at,
+                "num_stations": survey.num_stations,
+                "num_shots": survey.num_shots
+            }
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Get survey data error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/surveys/{survey_id}/reduce")
+def reduce_survey(
+    survey_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Reduce the survey: calculate 3D station positions from shots
+    """
+    try:
+        # Get survey data
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+        # Get all committed shots
+        committed_drafts = db.query(SurveyDraft).filter(
+            SurveyDraft.survey_id == survey_id,
+            SurveyDraft.status == 'committed'
+        ).all()
+
+        all_shots = export_utils.get_survey_shots_from_drafts(committed_drafts)
+        
+        # Filter to survey shots only (not splays)
+        survey_shots = [s for s in all_shots if s.get('type') == 'survey']
+
+        if not survey_shots:
+            raise HTTPException(status_code=400, detail="No survey shots to reduce")
+
+        # Convert to format expected by reduce_graph
+        from .models import SurveyShot
+        shot_objects = []
+        for s in survey_shots:
+            shot_obj = SurveyShot(
+                from_station=s['from'],
+                to_station=s['to'],
+                slope_distance=s['distance'],
+                azimuth_deg=s['compass'],
+                inclination_deg=s['clino']
+            )
+            shot_objects.append(shot_obj)
+
+        # Run reduction
+        origin_station = shot_objects[0].from_station
+        positions, edges, meta = reduce_graph(
+            shots=shot_objects,
+            origin_name=origin_station,
+            origin_x=0.0,
+            origin_y=0.0,
+            origin_z=0.0
+        )
+
+        # Update survey metadata
+        survey.num_stations = len(positions)
+        survey.num_shots = len(survey_shots)
+        survey.total_slope_distance = sum(s['distance'] for s in survey_shots)
+        db.commit()
+
+        return {
+            "success": True,
+            "survey_id": survey_id,
+            "num_stations": len(positions),
+            "num_shots": len(survey_shots),
+            "total_distance": survey.total_slope_distance,
+            "stations": positions,
+            "edges": edges,
+            "metadata": meta
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Reduce survey error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/surveys/{survey_id}/plot")
+def plot_survey(
+    survey_id: int,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Generate a line plot of the survey
+    """
+    try:
+        # Get survey data
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+        # Get all committed shots
+        committed_drafts = db.query(SurveyDraft).filter(
+            SurveyDraft.survey_id == survey_id,
+            SurveyDraft.status == 'committed'
+        ).all()
+
+        all_shots = export_utils.get_survey_shots_from_drafts(committed_drafts)
+        survey_shots = [s for s in all_shots if s.get('type') == 'survey']
+
+        if not survey_shots:
+            raise HTTPException(status_code=400, detail="No survey shots to plot")
+
+        # Convert to format expected by plot_traverse
+        from .models import SurveyShot
+        shot_objects = []
+        for s in survey_shots:
+            shot_obj = SurveyShot(
+                from_station=s['from'],
+                to_station=s['to'],
+                slope_distance=s['distance'],
+                azimuth_deg=s['compass'],
+                inclination_deg=s['clino']
+            )
+            shot_objects.append(shot_obj)
+
+        # Run reduction first
+        origin_station = shot_objects[0].from_station
+        positions, edges, meta = reduce_graph(
+            shots=shot_objects,
+            origin_name=origin_station,
+            origin_x=0.0,
+            origin_y=0.0,
+            origin_z=0.0
+        )
+
+        # Generate plot
+        png_bytes = plot_traverse(positions, edges, survey.section)
+
+        # Return as PNG image
+        return StreamingResponse(
+            io.BytesIO(png_bytes),
+            media_type="image/png",
+            headers={"Content-Disposition": f"inline; filename=survey_{survey_id}_plot.png"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Plot survey error: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/surveys/{survey_id}/export/{format}")
+def export_survey(
+    survey_id: int,
+    format: str,
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Export survey in various formats: srv, dat, svx, th, csv, json
+    """
+    try:
+        # Verify survey access
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            raise HTTPException(status_code=404, detail="Survey not found")
+
+        # Get all committed shots
+        committed_drafts = db.query(SurveyDraft).filter(
+            SurveyDraft.survey_id == survey_id,
+            SurveyDraft.status == 'committed'
+        ).all()
+
+        all_shots = export_utils.get_survey_shots_from_drafts(committed_drafts)
+
+        if not all_shots:
+            raise HTTPException(status_code=400, detail="No committed data to export")
+
+        survey_name = survey.title or f"Survey_{survey_id}"
+
+        # Generate export based on format
+        if format == "srv":
+            content = export_utils.convert_to_walls_srv(all_shots, survey_name)
+            media_type = "text/plain"
+            extension = "srv"
+        elif format == "dat":
+            content = export_utils.convert_to_compass_dat(all_shots, survey_name)
+            media_type = "text/plain"
+            extension = "dat"
+        elif format == "svx":
+            content = export_utils.convert_to_survex_svx(all_shots, survey_name)
+            media_type = "text/plain"
+            extension = "svx"
+        elif format == "th":
+            content = export_utils.convert_to_therion_th(all_shots, survey_name)
+            media_type = "text/plain"
+            extension = "th"
+        elif format == "csv":
+            content = export_utils.convert_to_csv(all_shots)
+            media_type = "text/csv"
+            extension = "csv"
+        elif format == "json":
+            metadata = {
+                "survey_id": survey_id,
+                "survey_name": survey_name,
+                "section": survey.section,
+                "total_shots": len(all_shots)
+            }
+            content = export_utils.convert_to_json(all_shots, metadata)
+            media_type = "application/json"
+            extension = "json"
+        else:
+            raise HTTPException(status_code=400, detail=f"Unsupported format: {format}")
+
+        # Generate filename
+        filename = export_utils.format_export_filename(survey_name, extension)
+
+        # Return as downloadable file
+        return StreamingResponse(
+            io.BytesIO(content.encode('utf-8')),
+            media_type=media_type,
+            headers={"Content-Disposition": f"attachment; filename={filename}"}
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Export survey error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
