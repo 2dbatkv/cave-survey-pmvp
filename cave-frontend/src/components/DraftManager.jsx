@@ -2,9 +2,10 @@ import { useState, useEffect } from "react";
 import { listDrafts, deleteDraft } from "../api";
 import DraftUpload from "./DraftUpload";
 import DraftEditor from "./DraftEditor";
+import SurveyViewer from "./SurveyViewer";
 
 export default function DraftManager({ surveyId = 1 }) {
-  const [view, setView] = useState("list"); // 'list' | 'upload' | 'edit'
+  const [view, setView] = useState("list"); // 'list' | 'upload' | 'edit' | 'survey'
   const [drafts, setDrafts] = useState([]);
   const [selectedDraftId, setSelectedDraftId] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -52,8 +53,14 @@ export default function DraftManager({ surveyId = 1 }) {
   };
 
   const handleCommitted = () => {
-    setView("list");
+    // After committing, show option to view survey
     loadDrafts();
+    // Optionally auto-switch to survey view
+    // setView("survey");
+  };
+
+  const handleViewSurvey = () => {
+    setView("survey");
   };
 
   // Render different views
@@ -85,17 +92,39 @@ export default function DraftManager({ surveyId = 1 }) {
     );
   }
 
+  if (view === "survey") {
+    return (
+      <SurveyViewer
+        surveyId={surveyId}
+        onClose={() => setView("list")}
+      />
+    );
+  }
+
+  // Check if there are committed drafts
+  const hasCommittedDrafts = drafts.some(d => d.status === 'committed');
+
   // Default: List view
   return (
     <div style={styles.container}>
       <div style={styles.header}>
         <h2>Survey Data Drafts</h2>
-        <button
-          style={styles.primaryButton}
-          onClick={() => setView("upload")}
-        >
-          ➕ Upload New Data
-        </button>
+        <div style={{ display: "flex", gap: "10px" }}>
+          {hasCommittedDrafts && (
+            <button
+              style={{...styles.primaryButton, backgroundColor: "#28a745"}}
+              onClick={handleViewSurvey}
+            >
+              📊 View Survey
+            </button>
+          )}
+          <button
+            style={styles.primaryButton}
+            onClick={() => setView("upload")}
+          >
+            ➕ Upload New Data
+          </button>
+        </div>
       </div>
 
       {error && (

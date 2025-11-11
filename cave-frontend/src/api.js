@@ -122,3 +122,59 @@ export async function deleteDraft(surveyId, draftId) {
   if (!r.ok) throw new Error(await r.text());
   return r.json();
 }
+
+// ============================================================
+// SURVEY PROCESSING & EXPORT APIs
+// ============================================================
+
+export async function getSurveyData(surveyId) {
+  const r = await fetch(`${API}/surveys/${surveyId}/data`, {
+    headers: getAuthHeaders()
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function reduceSurvey(surveyId) {
+  const r = await fetch(`${API}/surveys/${surveyId}/reduce`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+export async function getSurveyPlot(surveyId) {
+  const r = await fetch(`${API}/surveys/${surveyId}/plot`, {
+    method: "POST",
+    headers: getAuthHeaders()
+  });
+  if (!r.ok) throw new Error(await r.text());
+  const blob = await r.blob();
+  return URL.createObjectURL(blob);
+}
+
+export async function exportSurvey(surveyId, format) {
+  const r = await fetch(`${API}/surveys/${surveyId}/export/${format}`, {
+    headers: getAuthHeaders()
+  });
+  if (!r.ok) throw new Error(await r.text());
+  
+  // Get filename from Content-Disposition header
+  const contentDisposition = r.headers.get('Content-Disposition');
+  const filenameMatch = contentDisposition && contentDisposition.match(/filename=(.+)/);
+  const filename = filenameMatch ? filenameMatch[1] : `survey_${surveyId}.${format}`;
+  
+  // Download the file
+  const blob = await r.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+  
+  return { success: true, filename };
+}
