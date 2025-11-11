@@ -14,3 +14,6 @@ passlib[bcrypt]
 python-multipart
 ddtrace
 datadog
+# OCR dependencies
+Pillow
+pytesseract

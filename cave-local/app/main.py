@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Depends, status, Body
+from fastapi import FastAPI, HTTPException, Depends, status, Body, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
@@ -9,6 +9,7 @@ from collections import deque, defaultdict
 import io, os, math, json
 import logging
 from . import export_utils
+from . import ocr_utils
 from typing import List
 
 # Datadog APM
@@ -659,6 +660,112 @@ async def paste_data_draft(
         logger.error(f"Paste data error: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/surveys/{survey_id}/drafts/upload-images")
+async def upload_image_drafts(
+    survey_id: int,
+    files: List[UploadFile] = File(...),
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Upload one or more images of survey notes and extract data using OCR
+
+    Returns: Draft data extracted from images
+    """
+    try:
+        # Verify survey exists and user has access
+        survey = db.query(Survey).filter(
+            Survey.id == survey_id,
+            Survey.owner_id == current_user.id
+        ).first()
+
+        if not survey:
+            # Create a default survey for this user
+            survey = Survey(
+                owner_id=current_user.id,
+                title=f"{current_user.username}'s Survey",
+                section="main",
+                description="Auto-created survey for image uploads"
+            )
+            db.add(survey)
+            db.commit()
+            db.refresh(survey)
+            logger.info(f"Created survey {survey.id} for user {current_user.username}")
+
+        # Process each image
+        image_results = []
+
+        for file in files:
+            # Validate file type
+            if not file.content_type or not file.content_type.startswith('image/'):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid file type: {file.filename}. Only images are supported."
+                )
+
+            # Read image bytes
+            image_bytes = await file.read()
+
+            # Process with OCR
+            try:
+                draft_data = ocr_utils.process_image_to_draft(image_bytes, file.filename)
+                image_results.append(draft_data)
+                logger.info(f"OCR processed {file.filename}: {len(draft_data.get('shots', []))} shots found")
+            except ValueError as ve:
+                # OCR-specific errors
+                raise HTTPException(status_code=400, detail=str(ve))
+
+        # Combine results if multiple images
+        if len(image_results) == 0:
+            raise HTTPException(status_code=400, detail="No valid survey data found in images")
+        elif len(image_results) == 1:
+            draft_data = image_results[0]
+        else:
+            draft_data = ocr_utils.combine_multiple_images(image_results)
+
+        # Validate data
+        is_valid, issues = draft_utils.validate_draft_data(draft_data)
+
+        # Create draft
+        draft = SurveyDraft(
+            survey_id=survey_id,
+            uploaded_by=current_user.id,
+            source_type='photo',
+            original_filename=files[0].filename if len(files) == 1 else f"{len(files)}_images",
+            draft_data=draft_data,
+            status='draft',
+            has_errors=not is_valid,
+            error_count=len([i for i in issues if i["type"] == "shot"]),
+            validation_notes=json.dumps(issues) if issues else None
+        )
+
+        db.add(draft)
+        db.commit()
+        db.refresh(draft)
+
+        return {
+            "success": True,
+            "draft_id": draft.id,
+            "survey_id": survey_id,
+            "status": draft.status,
+            "shot_count": len(draft_data.get("shots", [])),
+            "num_images": len(files),
+            "has_errors": draft.has_errors,
+            "error_count": draft.error_count,
+            "issues": issues,
+            "message": f"Successfully processed {len(files)} image(s) and extracted {len(draft_data.get('shots', []))} shots"
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Image upload error: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Image processing failed: {str(e)}")
 
 
 @app.get("/surveys/{survey_id}/drafts")

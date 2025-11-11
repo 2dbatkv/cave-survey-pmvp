@@ -1,11 +1,13 @@
 import { useState } from "react";
-import { uploadCSVDraft, pasteDraft } from "../api";
+import { uploadCSVDraft, pasteDraft, uploadImageDrafts } from "../api";
 
 export default function DraftUpload({ surveyId, onDraftCreated }) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
   const [pasteText, setPasteText] = useState("");
   const [showPaste, setShowPaste] = useState(false);
+  const [imagePreviews, setImagePreviews] = useState([]);
+  const [selectedImages, setSelectedImages] = useState([]);
 
   // Handle CSV file upload
   const handleFileUpload = async (e) => {
@@ -32,23 +34,57 @@ export default function DraftUpload({ surveyId, onDraftCreated }) {
     }
   };
 
-  // Handle image upload (photos of survey notes)
-  const handleImageUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Handle image selection (with preview)
+  const handleImageSelection = (e) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+
+    setUploadError(null);
+    setSelectedImages(files);
+
+    // Create preview URLs
+    const previews = files.map(file => ({
+      name: file.name,
+      url: URL.createObjectURL(file)
+    }));
+    setImagePreviews(previews);
+  };
+
+  // Handle image upload and OCR processing
+  const handleImageUpload = async () => {
+    if (selectedImages.length === 0) {
+      setUploadError("No images selected");
+      return;
+    }
 
     setUploading(true);
     setUploadError(null);
 
     try {
-      // TODO: Implement image upload + OCR
-      setUploadError("Image/OCR feature coming soon!");
+      const result = await uploadImageDrafts(surveyId, selectedImages);
+
+      if (result.success) {
+        // Clean up previews
+        imagePreviews.forEach(preview => URL.revokeObjectURL(preview.url));
+        setImagePreviews([]);
+        setSelectedImages([]);
+        onDraftCreated(result);
+      } else {
+        setUploadError("Upload failed");
+      }
     } catch (err) {
-      setUploadError(err.message || "Failed to upload image");
+      setUploadError(err.message || "Failed to process images");
     } finally {
       setUploading(false);
-      e.target.value = "";
     }
+  };
+
+  // Cancel image selection
+  const cancelImageSelection = () => {
+    imagePreviews.forEach(preview => URL.revokeObjectURL(preview.url));
+    setImagePreviews([]);
+    setSelectedImages([]);
+    setUploadError(null);
   };
 
   // Handle paste data
@@ -109,18 +145,24 @@ export default function DraftUpload({ surveyId, onDraftCreated }) {
         {/* Image Upload */}
         <div style={styles.uploadBox}>
           <h3>📷 Upload Photos</h3>
-          <p>Scanned survey notes (coming soon)</p>
-          <label htmlFor="image-upload" style={{...styles.button, opacity: 0.5}}>
-            Choose Image
+          <p>Scanned survey notes with OCR</p>
+          <label htmlFor="image-upload" style={styles.button}>
+            {uploading ? "Processing..." : "Choose Images"}
           </label>
           <input
             id="image-upload"
             type="file"
             accept="image/*"
-            onChange={handleImageUpload}
-            disabled={true}
+            multiple
+            onChange={handleImageSelection}
+            disabled={uploading}
             style={{ display: "none" }}
           />
+          {selectedImages.length > 0 && (
+            <p style={{ marginTop: "10px", fontSize: "12px", color: "#666" }}>
+              {selectedImages.length} image{selectedImages.length > 1 ? 's' : ''} selected
+            </p>
+          )}
         </div>
 
         {/* Paste Data */}
@@ -153,6 +195,53 @@ export default function DraftUpload({ surveyId, onDraftCreated }) {
           >
             {uploading ? "Processing..." : "Upload Pasted Data"}
           </button>
+        </div>
+      )}
+
+      {/* Image Preview and Upload Section */}
+      {imagePreviews.length > 0 && (
+        <div style={styles.imagePreviewSection}>
+          <h3>Selected Images for OCR Processing</h3>
+          <p style={{ fontSize: "14px", color: "#666", marginBottom: "15px" }}>
+            These images will be processed using OCR to extract survey data. Review the images and click "Process Images" when ready.
+          </p>
+
+          <div style={styles.previewGrid}>
+            {imagePreviews.map((preview, idx) => (
+              <div key={idx} style={styles.previewCard}>
+                <img
+                  src={preview.url}
+                  alt={preview.name}
+                  style={styles.previewImage}
+                />
+                <p style={styles.previewFileName}>{preview.name}</p>
+              </div>
+            ))}
+          </div>
+
+          <div style={styles.actionButtons}>
+            <button
+              style={styles.button}
+              onClick={handleImageUpload}
+              disabled={uploading}
+            >
+              {uploading ? "Processing with OCR..." : `📷 Process ${imagePreviews.length} Image${imagePreviews.length > 1 ? 's' : ''}`}
+            </button>
+            <button
+              style={{...styles.button, backgroundColor: "#666", marginLeft: "10px"}}
+              onClick={cancelImageSelection}
+              disabled={uploading}
+            >
+              Cancel
+            </button>
+          </div>
+
+          {uploading && (
+            <div style={styles.processingMessage}>
+              <p>🔄 Running OCR to extract survey data from images...</p>
+              <p style={{ fontSize: "12px", color: "#666" }}>This may take a few moments depending on image quality and size.</p>
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -211,5 +300,55 @@ const styles = {
     border: "1px solid #ccc",
     borderRadius: "4px",
     marginBottom: "10px",
+  },
+  imagePreviewSection: {
+    marginTop: "30px",
+    padding: "20px",
+    border: "2px solid #0066cc",
+    borderRadius: "8px",
+    backgroundColor: "#f0f8ff",
+  },
+  previewGrid: {
+    display: "grid",
+    gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))",
+    gap: "15px",
+    marginBottom: "20px",
+  },
+  previewCard: {
+    backgroundColor: "white",
+    border: "1px solid #ddd",
+    borderRadius: "8px",
+    padding: "10px",
+    textAlign: "center",
+    boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
+  },
+  previewImage: {
+    width: "100%",
+    height: "150px",
+    objectFit: "contain",
+    borderRadius: "4px",
+    marginBottom: "8px",
+    backgroundColor: "#f5f5f5",
+  },
+  previewFileName: {
+    fontSize: "12px",
+    color: "#666",
+    margin: "5px 0 0 0",
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap",
+  },
+  actionButtons: {
+    display: "flex",
+    justifyContent: "center",
+    marginTop: "15px",
+  },
+  processingMessage: {
+    marginTop: "20px",
+    padding: "15px",
+    backgroundColor: "#fff3cd",
+    border: "1px solid #ffc107",
+    borderRadius: "4px",
+    textAlign: "center",
   },
 };

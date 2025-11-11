@@ -79,6 +79,30 @@ export async function pasteDraft(surveyId, content, format = "topodroid") {
   return r.json();
 }
 
+export async function uploadImageDrafts(surveyId, imageFiles) {
+  const formData = new FormData();
+
+  // Add all image files to form data
+  for (let i = 0; i < imageFiles.length; i++) {
+    formData.append('files', imageFiles[i]);
+  }
+
+  const token = localStorage.getItem("auth_token");
+  const headers = {};
+  if (token) {
+    headers["Authorization"] = `Bearer ${token}`;
+  }
+
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/upload-images`, {
+    method: "POST",
+    headers: headers,
+    body: formData
+  });
+
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 export async function listDrafts(surveyId) {
   const r = await fetch(`${API}/surveys/${surveyId}/drafts`, {
     headers: getAuthHeaders()
