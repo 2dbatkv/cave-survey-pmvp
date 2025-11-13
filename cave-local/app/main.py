@@ -336,6 +336,52 @@ async def tesseract_diagnostics():
 
     return result
 
+@app.get("/diagnostics/claude")
+async def claude_diagnostics():
+    """
+    Check if Claude API is configured and working
+    """
+    from anthropic import Anthropic
+
+    result = {
+        "api_key_configured": False,
+        "api_key_format_valid": False,
+        "api_test_successful": False,
+        "model_tested": "claude-3-opus-20240229",
+        "error": None
+    }
+
+    try:
+        # Check if API key is set
+        if not settings.anthropic_api_key:
+            result["error"] = "ANTHROPIC_API_KEY not configured in environment"
+            return result
+
+        result["api_key_configured"] = True
+
+        # Check if key has correct format
+        if settings.anthropic_api_key.startswith("sk-ant-"):
+            result["api_key_format_valid"] = True
+        else:
+            result["error"] = "API key doesn't start with 'sk-ant-'"
+            return result
+
+        # Try a simple API call
+        client = Anthropic(api_key=settings.anthropic_api_key)
+        message = client.messages.create(
+            model="claude-3-opus-20240229",
+            max_tokens=10,
+            messages=[{"role": "user", "content": "Say 'OK'"}]
+        )
+
+        result["api_test_successful"] = True
+        result["response"] = message.content[0].text
+
+    except Exception as e:
+        result["error"] = str(e)
+
+    return result
+
 @app.post("/register", response_model=Token)
 async def register(user: UserCreate, db: Session = Depends(get_db)):
     # Check if user already exists
