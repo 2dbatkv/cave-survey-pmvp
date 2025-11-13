@@ -455,3 +455,228 @@ def combine_multiple_images(image_results: List[Dict[str, Any]]) -> Dict[str, An
         "metadata": combined_metadata,
         "shots": all_shots
     }
+
+
+def parse_with_conversation(
+    raw_text: str,
+    user_message: str,
+    conversation_history: List[Dict[str, Any]],
+    api_key: str
+) -> Dict[str, Any]:
+    """
+    Conversational parsing - Claude can ask questions and refine parsing based on user feedback.
+
+    This creates an interactive dialogue where:
+    1. Claude attempts to parse the data
+    2. Claude asks clarifying questions about ambiguous formats
+    3. User provides feedback/corrections
+    4. Claude re-parses with new understanding
+    5. Repeat until user is satisfied
+
+    Args:
+        raw_text: The raw survey text to parse
+        user_message: Current message from user (e.g., "Parse this" or "Column 4 is BackSight Azimuth")
+        conversation_history: Previous messages [{"role": "user"|"assistant", "content": "..."}]
+        api_key: Anthropic API key
+
+    Returns:
+        {
+            "assistant_message": "Claude's response to user",
+            "shots": [...],  # Current parsed result
+            "needs_clarification": bool,  # True if Claude has questions
+            "questions": [...]  # Optional list of specific questions
+        }
+    """
+    try:
+        client = Anthropic(api_key=api_key)
+
+        # Build conversation context for Claude
+        system_prompt = """You are an expert at parsing cave survey data. You're having a conversation with a user to help them parse their survey notes correctly.
+
+Cave survey data typically contains these measurements:
+- FROM station (e.g., "A1", "S0")
+- TO station (e.g., "A2", "S1") - or "-" for splays
+- DISTANCE/LENGTH (feet or meters)
+- AZIMUTH/COMPASS (0-360 degrees) - may have Foresight (FS) and Backsight (BS)
+- INCLINATION/CLINO (-90 to +90 degrees) - may have Foresight (FS) and Backsight (BS)
+- LRUD (Left, Right, Up, Down) - passage dimensions
+
+Your job:
+1. Analyze the raw text and attempt to parse it
+2. If the format is ambiguous, ASK CLARIFYING QUESTIONS before parsing
+3. When user provides feedback, use it to improve your parsing
+4. Be conversational and helpful
+5. Always return valid JSON with your message and the parsed shots
+
+CRITICAL: Return ONLY a JSON object in this format:
+{
+  "assistant_message": "Your conversational response to the user",
+  "shots": [
+    {
+      "id": 1,
+      "from": "A1",
+      "to": "A2",
+      "distance": 12.5,
+      "compass": 317.2,
+      "clino": -72.5,
+      "type": "survey",
+      "fs_azimuth": null,
+      "bs_azimuth": null,
+      "fs_clino": null,
+      "bs_clino": null,
+      "left": null,
+      "right": null,
+      "up": null,
+      "down": null,
+      "edited": false,
+      "errors": [],
+      "source": "claude_conversational"
+    }
+  ],
+  "needs_clarification": false,
+  "questions": []
+}
+
+If you need clarification, set needs_clarification to true and include questions array.
+If you're confident in parsing, set needs_clarification to false and return the parsed shots.
+
+Important notes:
+- For splays, set "to": null and "type": "splay"
+- For FS/BS azimuths, populate both fs_azimuth and bs_azimuth fields
+- For FS/BS inclinations, populate both fs_clino and bs_clino fields
+- For LRUD, populate left, right, up, down fields
+- If a field isn't present in the data, set it to null"""
+
+        # Build messages for Claude
+        messages = []
+
+        # Add conversation history
+        for msg in conversation_history:
+            messages.append({
+                "role": msg["role"],
+                "content": msg["content"]
+            })
+
+        # Add current user message with raw text context
+        if len(conversation_history) == 0:
+            # First message - include the raw text
+            user_content = f"""Here's my cave survey data:
+
+```
+{raw_text}
+```
+
+{user_message}"""
+        else:
+            # Subsequent messages - just the message
+            user_content = user_message
+
+        messages.append({
+            "role": "user",
+            "content": user_content
+        })
+
+        logger.info(f"Conversational parsing with {len(messages)} messages")
+
+        # Try models in order until one works
+        model_used = None
+        for model in CLAUDE_MODELS:
+            try:
+                logger.info(f"Trying model: {model}")
+                message = client.messages.create(
+                    model=model,
+                    max_tokens=8192,  # Larger for conversation
+                    system=system_prompt,
+                    messages=messages
+                )
+
+                model_used = model
+                logger.info(f"✅ Successfully used model: {model}")
+                break
+
+            except Exception as e:
+                error_str = str(e)
+                if "not_found_error" in error_str:
+                    logger.warning(f"Model {model} not available, trying next...")
+                    continue
+                else:
+                    raise
+
+        if not model_used:
+            raise ValueError("No Claude models available for your API key")
+
+        # Extract response
+        response_text = message.content[0].text.strip()
+        logger.info(f"Claude response length: {len(response_text)} characters")
+
+        # Parse JSON from response (with fallback methods)
+        result = None
+
+        # Method 1: Direct parsing
+        try:
+            result = json.loads(response_text)
+            logger.info("Parsed JSON directly from response")
+        except json.JSONDecodeError:
+            pass
+
+        # Method 2: Remove markdown code blocks
+        if result is None:
+            cleaned = response_text
+            if "```json" in cleaned:
+                start = cleaned.find("```json") + 7
+                end = cleaned.find("```", start)
+                if end > start:
+                    cleaned = cleaned[start:end].strip()
+            elif "```" in cleaned:
+                start = cleaned.find("```") + 3
+                end = cleaned.find("```", start)
+                if end > start:
+                    cleaned = cleaned[start:end].strip()
+
+            try:
+                result = json.loads(cleaned)
+                logger.info("Parsed JSON after removing markdown")
+            except json.JSONDecodeError:
+                pass
+
+        # Method 3: Find JSON object by looking for { and }
+        if result is None:
+            try:
+                start = response_text.find('{')
+                end = response_text.rfind('}')
+                if start >= 0 and end > start:
+                    json_str = response_text[start:end+1]
+                    result = json.loads(json_str)
+                    logger.info("Parsed JSON by extracting { } block")
+            except json.JSONDecodeError:
+                pass
+
+        if result is None:
+            logger.error(f"Failed to parse Claude response as JSON")
+            logger.error(f"Response preview: {response_text[:500]}")
+            raise ValueError(f"Could not extract valid JSON from Claude response")
+
+        # Validate structure
+        if "assistant_message" not in result:
+            result["assistant_message"] = "I've attempted to parse the data."
+
+        if "shots" not in result:
+            result["shots"] = []
+
+        if "needs_clarification" not in result:
+            result["needs_clarification"] = False
+
+        if "questions" not in result:
+            result["questions"] = []
+
+        # Add metadata
+        result["model_used"] = model_used
+
+        logger.info(f"Conversational parsing complete: {len(result['shots'])} shots, needs_clarification={result['needs_clarification']}")
+
+        return result
+
+    except Exception as e:
+        logger.error(f"Conversational parsing failed: {str(e)}")
+        logger.exception("Full traceback:")
+        raise ValueError(f"Failed to parse with Claude: {str(e)}")

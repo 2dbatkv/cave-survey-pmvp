@@ -157,6 +157,16 @@ export async function parseText(surveyId, draftId, rawText) {
   return r.json();
 }
 
+export async function parseConversation(surveyId, draftId, message) {
+  const r = await fetch(`${API}/surveys/${surveyId}/drafts/${draftId}/parse-conversation`, {
+    method: "POST",
+    headers: getAuthHeaders(),
+    body: JSON.stringify({ message: message })
+  });
+  if (!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
 // ============================================================
 // SURVEY PROCESSING & EXPORT APIs
 // ============================================================

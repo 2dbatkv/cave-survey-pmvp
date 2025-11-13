@@ -1,5 +1,5 @@
-import { useState, useEffect } from "react";
-import { getDraft, updateDraft, commitDraft, parseText } from "../api";
+import { useState, useEffect, useRef } from "react";
+import { getDraft, updateDraft, commitDraft, parseText, parseConversation } from "../api";
 
 export default function DraftEditor({ surveyId, draftId, onClose, onCommitted }) {
   const [draft, setDraft] = useState(null);
@@ -14,6 +14,13 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
   // New: Raw text editing
   const [rawText, setRawText] = useState("");
   const [showRawText, setShowRawText] = useState(false);
+
+  // New: Conversational parsing
+  const [conversation, setConversation] = useState([]);
+  const [userMessage, setUserMessage] = useState("");
+  const [showConversation, setShowConversation] = useState(false);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const chatEndRef = useRef(null);
 
   // Load draft data
   useEffect(() => {
@@ -33,6 +40,11 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
         setShowRawText(true); // Start in raw text mode
       }
 
+      // Load conversation history if exists
+      if (data.draft_data?.conversation) {
+        setConversation(data.draft_data.conversation);
+      }
+
       setError(null);
     } catch (err) {
       setError(err.message || "Failed to load draft");
@@ -41,7 +53,7 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
     }
   };
 
-  // NEW: Parse raw text into structured data
+  // NEW: Parse raw text into structured data (OLD METHOD - kept for compatibility)
   const handleParse = async () => {
     try {
       setParsing(true);
@@ -57,6 +69,48 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
       setParsing(false);
     }
   };
+
+  // NEW: Conversational parsing - send message to Claude
+  const handleSendMessage = async () => {
+    if (!userMessage.trim()) return;
+
+    try {
+      setSendingMessage(true);
+      setError(null);
+
+      const result = await parseConversation(surveyId, draftId, userMessage);
+
+      // Update conversation with new messages
+      setConversation(result.conversation || []);
+      setShots(result.shots || []);
+      setUserMessage(""); // Clear input
+
+      // Scroll to bottom of chat
+      setTimeout(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      }, 100);
+
+    } catch (err) {
+      setError(err.message || "Failed to send message");
+    } finally {
+      setSendingMessage(false);
+    }
+  };
+
+  // Start conversational parsing
+  const handleStartConversation = () => {
+    setShowConversation(true);
+    setShowRawText(false);
+    // Auto-send first message if no conversation exists
+    if (conversation.length === 0) {
+      setUserMessage("Please parse this cave survey data and ask me any clarifying questions.");
+    }
+  };
+
+  // Auto-scroll chat to bottom when conversation updates
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [conversation]);
 
   // Handle cell edit
   const handleCellChange = (rowIndex, field, value) => {
@@ -183,18 +237,24 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
         </div>
       )}
 
-      {/* NEW WORKFLOW: Raw Text Editor */}
+      {/* NEW WORKFLOW: Raw Text Editor + Conversational Parsing */}
       {draft?.draft_data?.raw_text && (
         <div style={styles.toggleContainer}>
           <button
-            style={showRawText ? styles.toggleButtonActive : styles.toggleButton}
-            onClick={() => setShowRawText(true)}
+            style={showRawText && !showConversation ? styles.toggleButtonActive : styles.toggleButton}
+            onClick={() => { setShowRawText(true); setShowConversation(false); }}
           >
             📝 Edit Raw Text
           </button>
           <button
-            style={!showRawText ? styles.toggleButtonActive : styles.toggleButton}
-            onClick={() => setShowRawText(false)}
+            style={showConversation ? styles.toggleButtonActive : styles.toggleButton}
+            onClick={handleStartConversation}
+          >
+            💬 Chat with Claude ({conversation.length / 2} messages)
+          </button>
+          <button
+            style={!showRawText && !showConversation ? styles.toggleButtonActive : styles.toggleButton}
+            onClick={() => { setShowRawText(false); setShowConversation(false); }}
           >
             📊 View Structured Data ({shots.length} shots)
           </button>
@@ -236,8 +296,83 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
         </div>
       )}
 
+      {/* CONVERSATIONAL PARSING MODE */}
+      {showConversation && (
+        <div style={styles.conversationContainer}>
+          <div style={styles.conversationHeader}>
+            <h3>💬 Chat with Claude to Parse Your Data</h3>
+            <p>
+              Have a conversation with Claude about how to parse your survey data.
+              Claude can ask clarifying questions and refine the parsing based on your feedback.
+            </p>
+          </div>
+
+          {/* Chat Messages */}
+          <div style={styles.chatMessages}>
+            {conversation.length === 0 ? (
+              <div style={styles.chatEmpty}>
+                <p>👋 Start a conversation! Claude will help you parse the survey data and ask any clarifying questions.</p>
+              </div>
+            ) : (
+              conversation.map((msg, index) => (
+                <div
+                  key={index}
+                  style={msg.role === "user" ? styles.userMessage : styles.assistantMessage}
+                >
+                  <div style={styles.messageHeader}>
+                    {msg.role === "user" ? "👤 You" : "🤖 Claude"}
+                    {msg.shots_count !== undefined && (
+                      <span style={styles.shotsBadge}>{msg.shots_count} shots</span>
+                    )}
+                  </div>
+                  <div style={styles.messageContent}>
+                    {msg.content}
+                  </div>
+                </div>
+              ))
+            )}
+            <div ref={chatEndRef} />
+          </div>
+
+          {/* Input Area */}
+          <div style={styles.chatInput}>
+            <textarea
+              value={userMessage}
+              onChange={(e) => setUserMessage(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSendMessage();
+                }
+              }}
+              style={styles.chatTextarea}
+              placeholder="Ask Claude about the data format, clarify column meanings, or say 'commit' when ready..."
+              rows={3}
+              disabled={sendingMessage}
+            />
+            <button
+              style={styles.sendButton}
+              onClick={handleSendMessage}
+              disabled={sendingMessage || !userMessage.trim()}
+            >
+              {sendingMessage ? "⏳ Sending..." : "Send 📤"}
+            </button>
+          </div>
+
+          {/* Current Parsed Data Preview */}
+          {shots.length > 0 && (
+            <div style={styles.parsedPreview}>
+              <h4>Current Parsed Data: {shots.length} shots</h4>
+              <p style={{ fontSize: "13px", color: "#666" }}>
+                Switch to "View Structured Data" tab to see full details and edit individual shots
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* STRUCTURED DATA MODE */}
-      {!showRawText && (
+      {!showRawText && !showConversation && (
         <div style={styles.tableContainer}>
         <table style={styles.table}>
           <thead>
@@ -333,8 +468,8 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
       </div>
       )}
 
-      {/* ACTIONS - Only show when not in raw text mode */}
-      {!showRawText && (
+      {/* ACTIONS - Only show when in structured data view */}
+      {!showRawText && !showConversation && (
       <div style={styles.actions}>
         <button style={styles.button} onClick={handleAddRow}>
           ➕ Add Row
@@ -523,5 +658,100 @@ const styles = {
     flexDirection: "column",
     alignItems: "center",
     gap: "10px",
+  },
+  // Conversational parsing styles
+  conversationContainer: {
+    marginBottom: "20px",
+    border: "2px solid #0066cc",
+    borderRadius: "8px",
+    padding: "20px",
+    backgroundColor: "#f8f9fa",
+  },
+  conversationHeader: {
+    marginBottom: "20px",
+    paddingBottom: "15px",
+    borderBottom: "2px solid #ddd",
+  },
+  chatMessages: {
+    maxHeight: "500px",
+    overflowY: "auto",
+    marginBottom: "20px",
+    padding: "10px",
+    backgroundColor: "white",
+    borderRadius: "6px",
+    border: "1px solid #ddd",
+  },
+  chatEmpty: {
+    padding: "40px 20px",
+    textAlign: "center",
+    color: "#666",
+    fontSize: "14px",
+  },
+  userMessage: {
+    marginBottom: "15px",
+    padding: "12px",
+    backgroundColor: "#e3f2fd",
+    borderRadius: "8px",
+    borderLeft: "4px solid #2196f3",
+  },
+  assistantMessage: {
+    marginBottom: "15px",
+    padding: "12px",
+    backgroundColor: "#f1f8e9",
+    borderRadius: "8px",
+    borderLeft: "4px solid #8bc34a",
+  },
+  messageHeader: {
+    fontWeight: "bold",
+    marginBottom: "8px",
+    fontSize: "13px",
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  shotsBadge: {
+    fontSize: "11px",
+    padding: "2px 8px",
+    backgroundColor: "#4caf50",
+    color: "white",
+    borderRadius: "12px",
+    fontWeight: "normal",
+  },
+  messageContent: {
+    fontSize: "14px",
+    lineHeight: "1.6",
+    whiteSpace: "pre-wrap",
+  },
+  chatInput: {
+    display: "flex",
+    flexDirection: "column",
+    gap: "10px",
+  },
+  chatTextarea: {
+    width: "100%",
+    padding: "12px",
+    border: "2px solid #ddd",
+    borderRadius: "6px",
+    fontSize: "14px",
+    fontFamily: "inherit",
+    resize: "vertical",
+  },
+  sendButton: {
+    alignSelf: "flex-end",
+    padding: "12px 30px",
+    backgroundColor: "#0066cc",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
+    fontSize: "15px",
+    fontWeight: "bold",
+  },
+  parsedPreview: {
+    marginTop: "20px",
+    padding: "15px",
+    backgroundColor: "#fff3cd",
+    border: "1px solid #ffc107",
+    borderRadius: "6px",
   },
 };

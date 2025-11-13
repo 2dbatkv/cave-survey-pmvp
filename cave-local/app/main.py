@@ -1289,6 +1289,140 @@ async def parse_draft_text(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/surveys/{survey_id}/drafts/{draft_id}/parse-conversation")
+async def parse_with_conversation_endpoint(
+    survey_id: int,
+    draft_id: int,
+    data: dict,  # {"message": "user message"}
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Conversational parsing endpoint - have a back-and-forth dialogue with Claude about parsing.
+
+    Flow:
+    1. User sends first message (e.g., "Parse this data")
+    2. Claude attempts parse and may ask clarifying questions
+    3. User responds with clarifications
+    4. Claude re-parses with better understanding
+    5. Repeat until user is satisfied
+    6. User says "commit" or "looks good"
+
+    Request body:
+    {
+        "message": "User's message to Claude"
+    }
+
+    Response:
+    {
+        "assistant_message": "Claude's response",
+        "shots": [...],
+        "needs_clarification": bool,
+        "questions": [...],
+        "conversation": [...]
+    }
+    """
+    try:
+        # Get the draft
+        draft = db.query(SurveyDraft).filter(
+            SurveyDraft.id == draft_id,
+            SurveyDraft.survey_id == survey_id
+        ).first()
+
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
+
+        # Verify access
+        if settings.disable_auth:
+            survey = db.query(Survey).filter(Survey.id == survey_id).first()
+        else:
+            survey = db.query(Survey).filter(
+                Survey.id == survey_id,
+                Survey.owner_id == current_user.id
+            ).first()
+
+        if not survey:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Get user message
+        user_message = data.get("message", "").strip()
+        if not user_message:
+            raise HTTPException(status_code=400, detail="No message provided")
+
+        # Get raw text from draft
+        raw_text = draft.draft_data.get("raw_text", "")
+        if not raw_text:
+            raise HTTPException(status_code=400, detail="No raw text available in draft. Upload an image first.")
+
+        # Get conversation history from draft (or initialize)
+        if "conversation" not in draft.draft_data:
+            draft.draft_data["conversation"] = []
+
+        conversation_history = draft.draft_data["conversation"]
+
+        # Call conversational parsing
+        if not settings.anthropic_api_key:
+            raise HTTPException(status_code=500, detail="Claude API not configured")
+
+        logger.info(f"Conversational parsing for draft {draft_id}, message: {user_message[:50]}...")
+
+        result = claude_ocr.parse_with_conversation(
+            raw_text=raw_text,
+            user_message=user_message,
+            conversation_history=conversation_history,
+            api_key=settings.anthropic_api_key
+        )
+
+        # Update conversation history
+        conversation_history.append({
+            "role": "user",
+            "content": user_message
+        })
+        conversation_history.append({
+            "role": "assistant",
+            "content": result["assistant_message"],
+            "shots_count": len(result["shots"])
+        })
+
+        # Update draft with latest parsed data
+        draft.draft_data["conversation"] = conversation_history
+        draft.draft_data["shots"] = result["shots"]
+        draft.draft_data["metadata"]["needs_parsing"] = result.get("needs_clarification", False)
+        draft.draft_data["metadata"]["last_parsed_at"] = datetime.utcnow().isoformat()
+        draft.draft_data["metadata"]["model_used"] = result.get("model_used", "unknown")
+
+        # Validate the parsed data
+        is_valid, issues = draft_utils.validate_draft_data(draft.draft_data)
+        draft.has_errors = not is_valid
+        draft.error_count = len([i for i in issues if i.get("type") == "shot"])
+        draft.validation_notes = json.dumps(issues) if issues else None
+
+        db.commit()
+        db.refresh(draft)
+
+        return {
+            "success": True,
+            "assistant_message": result["assistant_message"],
+            "shots": result["shots"],
+            "shot_count": len(result["shots"]),
+            "needs_clarification": result.get("needs_clarification", False),
+            "questions": result.get("questions", []),
+            "conversation": conversation_history,
+            "has_errors": draft.has_errors,
+            "validation_issues": issues,
+            "model_used": result.get("model_used")
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Conversational parse error: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 async def parse_text_with_claude(raw_text: str, api_key: str) -> Dict[str, Any]:
     """
     Use Claude to parse raw survey text into structured data.
