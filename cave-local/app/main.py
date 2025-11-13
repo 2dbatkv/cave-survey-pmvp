@@ -11,7 +11,7 @@ import logging
 from . import export_utils
 from . import ocr_utils
 from . import claude_ocr
-from typing import List
+from typing import List, Dict, Any
 
 # Datadog APM
 from ddtrace import patch_all, tracer
