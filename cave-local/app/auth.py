@@ -16,14 +16,20 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    # TEMPORARY: Simple password check for testing only
-    # Remove this once bcrypt issues are resolved
-    return hashed_password == f"TEMP_{plain_password}"
+    """Verify a plain password against a hashed password using bcrypt."""
+    try:
+        return pwd_context.verify(plain_password, hashed_password)
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return False
 
 def get_password_hash(password: str) -> str:
-    # TEMPORARY: Simple password "hash" for testing only
-    # Remove this once bcrypt issues are resolved
-    return f"TEMP_{password}"
+    """Hash a password using bcrypt."""
+    try:
+        return pwd_context.hash(password)
+    except Exception as e:
+        logger.error(f"Password hashing error: {e}")
+        raise ValueError("Failed to hash password")
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     to_encode = data.copy()
@@ -71,4 +77,13 @@ async def get_current_user(
 async def get_current_active_user(current_user: User = Depends(get_current_user)):
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
+    return current_user
+
+async def get_current_admin_user(current_user: User = Depends(get_current_active_user)):
+    """Verify that the current user has admin privileges."""
+    if not current_user.is_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Admin access required"
+        )
     return current_user
