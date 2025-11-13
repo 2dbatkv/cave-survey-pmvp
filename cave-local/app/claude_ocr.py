@@ -96,8 +96,9 @@ IMPORTANT:
 - Preserve all decimal precision from the image"""
 
         # Call Claude API
+        # Using Claude 3 Opus for maximum accuracy on vision tasks
         message = client.messages.create(
-            model="claude-3-5-sonnet-20240620",  # Claude 3.5 Sonnet (June 2024)
+            model="claude-3-opus-20240229",  # Claude 3 Opus
             max_tokens=4096,
             messages=[
                 {
