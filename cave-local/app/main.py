@@ -378,13 +378,16 @@ async def claude_diagnostics():
                     messages=[{"role": "user", "content": "Say 'OK'"}]
                 )
 
-                result["api_test_successful"] = True
-                result["model_tested"] = model
-                result["response"] = message.content[0].text
                 result["available_models"].append(model)
                 logger.info(f"✅ Model {model} is available")
 
-                # Use first working model and continue testing others
+                # Set the first working model as the tested one
+                if not result["api_test_successful"]:
+                    result["api_test_successful"] = True
+                    result["model_tested"] = model
+                    result["response"] = message.content[0].text
+
+                # Continue testing a few more models
                 if len(result["available_models"]) >= 3:
                     break
 

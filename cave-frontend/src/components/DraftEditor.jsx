@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { getDraft, updateDraft, commitDraft } from "../api";
+import { getDraft, updateDraft, commitDraft, parseText } from "../api";
 
 export default function DraftEditor({ surveyId, draftId, onClose, onCommitted }) {
   const [draft, setDraft] = useState(null);
@@ -7,8 +7,13 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [committing, setCommitting] = useState(false);
+  const [parsing, setParsing] = useState(false);
   const [error, setError] = useState(null);
   const [editingCell, setEditingCell] = useState(null); // {row, col}
+
+  // New: Raw text editing
+  const [rawText, setRawText] = useState("");
+  const [showRawText, setShowRawText] = useState(false);
 
   // Load draft data
   useEffect(() => {
@@ -21,11 +26,35 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
       const data = await getDraft(surveyId, draftId);
       setDraft(data);
       setShots(data.draft_data?.shots || []);
+
+      // NEW WORKFLOW: Check if draft has raw text (needs parsing)
+      if (data.draft_data?.raw_text) {
+        setRawText(data.draft_data.raw_text);
+        setShowRawText(true); // Start in raw text mode
+      }
+
       setError(null);
     } catch (err) {
       setError(err.message || "Failed to load draft");
     } finally {
       setLoading(false);
+    }
+  };
+
+  // NEW: Parse raw text into structured data
+  const handleParse = async () => {
+    try {
+      setParsing(true);
+      setError(null);
+      const result = await parseText(surveyId, draftId, rawText);
+      setShots(result.shots || []);
+      setShowRawText(false); // Switch to structured view
+      alert(`Parsed ${result.shot_count} shots!`);
+      await loadDraft(); // Reload to get updated draft
+    } catch (err) {
+      setError(err.message || "Failed to parse text");
+    } finally {
+      setParsing(false);
     }
   };
 
@@ -154,7 +183,62 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
         </div>
       )}
 
-      <div style={styles.tableContainer}>
+      {/* NEW WORKFLOW: Raw Text Editor */}
+      {draft?.draft_data?.raw_text && (
+        <div style={styles.toggleContainer}>
+          <button
+            style={showRawText ? styles.toggleButtonActive : styles.toggleButton}
+            onClick={() => setShowRawText(true)}
+          >
+            📝 Edit Raw Text
+          </button>
+          <button
+            style={!showRawText ? styles.toggleButtonActive : styles.toggleButton}
+            onClick={() => setShowRawText(false)}
+          >
+            📊 View Structured Data ({shots.length} shots)
+          </button>
+        </div>
+      )}
+
+      {/* RAW TEXT MODE */}
+      {showRawText && draft?.draft_data?.raw_text && (
+        <div style={styles.rawTextContainer}>
+          <div style={styles.rawTextHeader}>
+            <h3>Raw OCR Text (Editable)</h3>
+            <p>
+              Edit the text below to fix any OCR errors, then click Parse to
+              convert it into structured survey data.
+            </p>
+          </div>
+
+          <textarea
+            value={rawText}
+            onChange={(e) => setRawText(e.target.value)}
+            style={styles.rawTextArea}
+            rows={25}
+            placeholder="Paste or edit survey data here..."
+          />
+
+          <div style={styles.rawTextActions}>
+            <button
+              style={{ ...styles.button, backgroundColor: "#28a745", fontSize: "16px", padding: "12px 24px" }}
+              onClick={handleParse}
+              disabled={parsing || !rawText.trim()}
+            >
+              {parsing ? "⏳ Parsing..." : "🔄 Parse into Structured Data"}
+            </button>
+
+            <p style={{ margin: 0, color: "#666", fontSize: "13px" }}>
+              Claude Sonnet 4.5 will intelligently parse your survey data
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* STRUCTURED DATA MODE */}
+      {!showRawText && (
+        <div style={styles.tableContainer}>
         <table style={styles.table}>
           <thead>
             <tr>
@@ -247,7 +331,10 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
           </tbody>
         </table>
       </div>
+      )}
 
+      {/* ACTIONS - Only show when not in raw text mode */}
+      {!showRawText && (
       <div style={styles.actions}>
         <button style={styles.button} onClick={handleAddRow}>
           ➕ Add Row
@@ -272,6 +359,7 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
           </button>
         </div>
       </div>
+      )}
     </div>
   );
 }
@@ -383,5 +471,57 @@ const styles = {
     borderRadius: "4px",
     cursor: "pointer",
     fontSize: "14px",
+  },
+  // NEW: Raw text editing styles
+  toggleContainer: {
+    display: "flex",
+    gap: "10px",
+    marginBottom: "20px",
+    borderBottom: "2px solid #ddd",
+    paddingBottom: "10px",
+  },
+  toggleButton: {
+    padding: "10px 20px",
+    backgroundColor: "#f4f4f4",
+    color: "#333",
+    border: "1px solid #ddd",
+    borderRadius: "4px 4px 0 0",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "500",
+  },
+  toggleButtonActive: {
+    padding: "10px 20px",
+    backgroundColor: "#0066cc",
+    color: "white",
+    border: "1px solid #0066cc",
+    borderRadius: "4px 4px 0 0",
+    cursor: "pointer",
+    fontSize: "14px",
+    fontWeight: "bold",
+  },
+  rawTextContainer: {
+    marginBottom: "20px",
+  },
+  rawTextHeader: {
+    marginBottom: "15px",
+  },
+  rawTextArea: {
+    width: "100%",
+    padding: "12px",
+    border: "2px solid #ddd",
+    borderRadius: "4px",
+    fontSize: "14px",
+    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+    lineHeight: "1.5",
+    resize: "vertical",
+    minHeight: "400px",
+  },
+  rawTextActions: {
+    marginTop: "15px",
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "10px",
   },
 };
