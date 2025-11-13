@@ -96,9 +96,9 @@ IMPORTANT:
 - Preserve all decimal precision from the image"""
 
         # Call Claude API
-        # Using Claude 3 Opus for maximum accuracy on vision tasks
+        # Using Claude 3 Haiku for fast, cost-effective vision processing
         message = client.messages.create(
-            model="claude-3-opus-20240229",  # Claude 3 Opus
+            model="claude-3-haiku-20240307",  # Claude 3 Haiku - available to all tiers
             max_tokens=4096,
             messages=[
                 {

@@ -347,7 +347,7 @@ async def claude_diagnostics():
         "api_key_configured": False,
         "api_key_format_valid": False,
         "api_test_successful": False,
-        "model_tested": "claude-3-opus-20240229",
+        "model_tested": "claude-3-haiku-20240307",
         "error": None
     }
 
@@ -366,10 +366,10 @@ async def claude_diagnostics():
             result["error"] = "API key doesn't start with 'sk-ant-'"
             return result
 
-        # Try a simple API call
+        # Try a simple API call with Haiku (available to all tiers)
         client = Anthropic(api_key=settings.anthropic_api_key)
         message = client.messages.create(
-            model="claude-3-opus-20240229",
+            model="claude-3-haiku-20240307",
             max_tokens=10,
             messages=[{"role": "user", "content": "Say 'OK'"}]
         )
