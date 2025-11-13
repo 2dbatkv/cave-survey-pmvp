@@ -1388,6 +1388,7 @@ async def parse_with_conversation_endpoint(
         draft.draft_data["conversation"] = conversation_history
         draft.draft_data["shots"] = result["shots"]
         draft.draft_data["metadata"]["needs_parsing"] = result.get("needs_clarification", False)
+        draft.draft_data["metadata"]["template_learned"] = result.get("template_learned", False)
         draft.draft_data["metadata"]["last_parsed_at"] = datetime.utcnow().isoformat()
         draft.draft_data["metadata"]["model_used"] = result.get("model_used", "unknown")
 
@@ -1407,6 +1408,7 @@ async def parse_with_conversation_endpoint(
             "shot_count": len(result["shots"]),
             "needs_clarification": result.get("needs_clarification", False),
             "questions": result.get("questions", []),
+            "template_learned": result.get("template_learned", False),
             "conversation": conversation_history,
             "has_errors": draft.has_errors,
             "validation_issues": issues,

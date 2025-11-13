@@ -85,6 +85,13 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
       setShots(result.shots || []);
       setUserMessage(""); // Clear input
 
+      // Show success message if template was learned
+      if (result.template_learned) {
+        setTimeout(() => {
+          alert("✅ Template learned! Claude now understands your format and will apply it consistently.");
+        }, 500);
+      }
+
       // Scroll to bottom of chat
       setTimeout(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -306,6 +313,31 @@ export default function DraftEditor({ surveyId, draftId, onClose, onCommitted })
               Claude can ask clarifying questions and refine the parsing based on your feedback.
             </p>
           </div>
+
+          {/* Template Examples Helper */}
+          {conversation.length === 0 && (
+            <div style={styles.templateHelper}>
+              <h4>💡 Pro Tip: Teach Claude Your Format</h4>
+              <p>Claude will ask you to provide 1-3 example conversions showing:</p>
+              <div style={styles.exampleBox}>
+                <strong>Example 1 (Basic):</strong>
+                <pre style={styles.examplePre}>
+INPUT (from paper):  A1  A2  12.5ft  317°  -15°
+OUTPUT (for software): A1 A2 12.5 317.0 -15.0
+                </pre>
+              </div>
+              <div style={styles.exampleBox}>
+                <strong>Example 2 (FS/BS Azimuth with LRUD):</strong>
+                <pre style={styles.examplePre}>
+INPUT:  B1  B2  15.2m  FS:278°  BS:98°  Inc:-12°  L:3.0  R:2.5  U:6.0  D:2.0
+OUTPUT: B1 B2 15.2 278.0 98.0 -12.0 3.0 2.5 6.0 2.0
+                </pre>
+              </div>
+              <p style={{ fontSize: "13px", color: "#666", marginTop: "10px" }}>
+                This helps Claude learn your exact format needs: decimal places, spacing, column order, etc.
+              </p>
+            </div>
+          )}
 
           {/* Chat Messages */}
           <div style={styles.chatMessages}>
@@ -753,5 +785,32 @@ const styles = {
     backgroundColor: "#fff3cd",
     border: "1px solid #ffc107",
     borderRadius: "6px",
+  },
+  // Template helper styles
+  templateHelper: {
+    marginBottom: "20px",
+    padding: "20px",
+    backgroundColor: "#e8f4f8",
+    border: "2px solid #4fc3f7",
+    borderRadius: "8px",
+  },
+  exampleBox: {
+    marginTop: "15px",
+    marginBottom: "15px",
+    padding: "15px",
+    backgroundColor: "white",
+    border: "1px solid #ddd",
+    borderRadius: "6px",
+  },
+  examplePre: {
+    marginTop: "8px",
+    padding: "10px",
+    backgroundColor: "#f5f5f5",
+    border: "1px solid #ccc",
+    borderRadius: "4px",
+    fontFamily: "Consolas, Monaco, 'Courier New', monospace",
+    fontSize: "13px",
+    lineHeight: "1.5",
+    overflow: "auto",
   },
 };

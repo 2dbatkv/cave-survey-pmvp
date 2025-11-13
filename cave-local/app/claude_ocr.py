@@ -501,12 +501,36 @@ Cave survey data typically contains these measurements:
 - INCLINATION/CLINO (-90 to +90 degrees) - may have Foresight (FS) and Backsight (BS)
 - LRUD (Left, Right, Up, Down) - passage dimensions
 
+TEMPLATE-BASED PARSING (IMPORTANT!):
+The user's raw data may not be in the format needed for their cave survey software. You need to learn the DESIRED OUTPUT FORMAT from the user.
+
+On first message, ASK THE USER for 1-3 example conversions showing:
+- What the data looks like on paper (input)
+- What format their software needs (output)
+
+Example request:
+"I can see your survey data! To format it correctly for your software, could you show me 1-3 examples of how you want the data formatted?
+
+For example:
+INPUT (from paper):  A1  A2  12.5ft  317°  -15°
+OUTPUT (for software): A1 A2 12.5 317.0 -15.0
+
+This helps me understand your specific format needs (decimal places, spacing, units, column order, etc.)"
+
+Once you receive template examples, LEARN THE PATTERN and apply it consistently:
+- Number formatting (decimal places)
+- Column spacing/delimiters (tabs, spaces, commas)
+- Unit handling (include/exclude)
+- Special formatting (leading zeros, signs, etc.)
+- Column order
+
 Your job:
-1. Analyze the raw text and attempt to parse it
-2. If the format is ambiguous, ASK CLARIFYING QUESTIONS before parsing
-3. When user provides feedback, use it to improve your parsing
-4. Be conversational and helpful
-5. Always return valid JSON with your message and the parsed shots
+1. ASK for template examples on first parse attempt
+2. LEARN from the examples user provides
+3. Apply the learned format consistently
+4. Ask clarifying questions if the format is unclear
+5. Refine based on user feedback
+6. Always return valid JSON with your message and parsed shots
 
 CRITICAL: Return ONLY a JSON object in this format:
 {
@@ -533,19 +557,21 @@ CRITICAL: Return ONLY a JSON object in this format:
       "source": "claude_conversational"
     }
   ],
-  "needs_clarification": false,
-  "questions": []
+  "needs_clarification": true,
+  "questions": ["Could you provide 1-3 examples of your desired output format?"],
+  "template_learned": false
 }
 
-If you need clarification, set needs_clarification to true and include questions array.
-If you're confident in parsing, set needs_clarification to false and return the parsed shots.
+When template is learned, set "template_learned": true
 
 Important notes:
+- ALWAYS ask for template examples on first message (unless user already provided them)
 - For splays, set "to": null and "type": "splay"
 - For FS/BS azimuths, populate both fs_azimuth and bs_azimuth fields
 - For FS/BS inclinations, populate both fs_clino and bs_clino fields
 - For LRUD, populate left, right, up, down fields
-- If a field isn't present in the data, set it to null"""
+- If a field isn't present in the data, set it to null
+- Match the user's desired format EXACTLY (spacing, decimals, units, etc.)"""
 
         # Build messages for Claude
         messages = []
@@ -669,10 +695,13 @@ Important notes:
         if "questions" not in result:
             result["questions"] = []
 
+        if "template_learned" not in result:
+            result["template_learned"] = False
+
         # Add metadata
         result["model_used"] = model_used
 
-        logger.info(f"Conversational parsing complete: {len(result['shots'])} shots, needs_clarification={result['needs_clarification']}")
+        logger.info(f"Conversational parsing complete: {len(result['shots'])} shots, needs_clarification={result['needs_clarification']}, template_learned={result['template_learned']}")
 
         return result
 
