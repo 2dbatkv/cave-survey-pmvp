@@ -46,7 +46,9 @@ def extract_survey_data_with_claude(
         logger.info(f"Processing image with Claude: {filename}, size={len(image_bytes)} bytes")
 
         # Create the prompt for Claude
-        prompt = """You are analyzing a cave survey data sheet. Extract all survey shots from this image.
+        prompt = """CRITICAL: You must respond with ONLY a valid JSON object. No explanations, no markdown, no extra text.
+
+You are analyzing a cave survey data sheet. Extract all survey shots from this image.
 
 Cave survey shots typically contain these 5 values in order:
 1. FROM station (e.g., "A1", "S0", "1")
@@ -126,27 +128,60 @@ IMPORTANT:
         logger.info(f"Claude response length: {len(response_text)} characters")
 
         # Parse JSON from response
-        # Claude might wrap JSON in markdown code blocks, so let's handle that
+        # Claude might wrap JSON in markdown code blocks or add extra text
         response_text = response_text.strip()
 
-        # Remove markdown code blocks if present
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        elif response_text.startswith("```"):
-            response_text = response_text[3:]
+        # Try to extract JSON from the response
+        draft_data = None
 
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-
-        response_text = response_text.strip()
-
-        # Parse JSON
+        # Method 1: Try direct parsing
         try:
             draft_data = json.loads(response_text)
-        except json.JSONDecodeError as je:
-            logger.error(f"Failed to parse Claude response as JSON: {je}")
-            logger.error(f"Response text: {response_text[:500]}")
-            raise ValueError(f"Claude returned invalid JSON: {str(je)}")
+            logger.info("Parsed JSON directly from response")
+        except json.JSONDecodeError:
+            pass
+
+        # Method 2: Remove markdown code blocks
+        if draft_data is None:
+            cleaned = response_text
+            if "```json" in cleaned:
+                # Extract content between ```json and ```
+                start = cleaned.find("```json") + 7
+                end = cleaned.find("```", start)
+                if end > start:
+                    cleaned = cleaned[start:end].strip()
+            elif "```" in cleaned:
+                # Extract content between ``` and ```
+                start = cleaned.find("```") + 3
+                end = cleaned.find("```", start)
+                if end > start:
+                    cleaned = cleaned[start:end].strip()
+
+            try:
+                draft_data = json.loads(cleaned)
+                logger.info("Parsed JSON after removing markdown")
+            except json.JSONDecodeError:
+                pass
+
+        # Method 3: Find JSON object by looking for { and }
+        if draft_data is None:
+            try:
+                # Find first { and last }
+                start = response_text.find('{')
+                end = response_text.rfind('}')
+                if start >= 0 and end > start:
+                    json_str = response_text[start:end+1]
+                    draft_data = json.loads(json_str)
+                    logger.info("Parsed JSON by extracting { } block")
+            except json.JSONDecodeError:
+                pass
+
+        # If all methods failed, log the response and raise error
+        if draft_data is None:
+            logger.error(f"Failed to parse Claude response as JSON")
+            logger.error(f"Full response text:\n{response_text}")
+            logger.error(f"Response preview (first 500 chars): {response_text[:500]}")
+            raise ValueError(f"Could not extract valid JSON from Claude response. Response length: {len(response_text)}")
 
         # Validate structure
         if not isinstance(draft_data, dict):
