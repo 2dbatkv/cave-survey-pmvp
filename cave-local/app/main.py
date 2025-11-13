@@ -347,7 +347,8 @@ async def claude_diagnostics():
         "api_key_configured": False,
         "api_key_format_valid": False,
         "api_test_successful": False,
-        "model_tested": "claude-3-haiku-20240307",
+        "model_tested": "claude-sonnet-4-5-20250929",
+        "available_models": [],
         "error": None
     }
 
@@ -366,16 +367,36 @@ async def claude_diagnostics():
             result["error"] = "API key doesn't start with 'sk-ant-'"
             return result
 
-        # Try a simple API call with Haiku (available to all tiers)
+        # Try models to see which are available
         client = Anthropic(api_key=settings.anthropic_api_key)
-        message = client.messages.create(
-            model="claude-3-haiku-20240307",
-            max_tokens=10,
-            messages=[{"role": "user", "content": "Say 'OK'"}]
-        )
 
-        result["api_test_successful"] = True
-        result["response"] = message.content[0].text
+        for model in claude_ocr.CLAUDE_MODELS:
+            try:
+                message = client.messages.create(
+                    model=model,
+                    max_tokens=10,
+                    messages=[{"role": "user", "content": "Say 'OK'"}]
+                )
+
+                result["api_test_successful"] = True
+                result["model_tested"] = model
+                result["response"] = message.content[0].text
+                result["available_models"].append(model)
+                logger.info(f"✅ Model {model} is available")
+
+                # Use first working model and continue testing others
+                if len(result["available_models"]) >= 3:
+                    break
+
+            except Exception as e:
+                error_str = str(e)
+                if "not_found_error" in error_str:
+                    logger.info(f"❌ Model {model} not available")
+                else:
+                    logger.warning(f"Model {model} test error: {e}")
+
+        if not result["available_models"]:
+            result["error"] = "No Claude models available for your API key"
 
     except Exception as e:
         result["error"] = str(e)

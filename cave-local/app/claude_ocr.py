@@ -12,7 +12,8 @@ logger = logging.getLogger(__name__)
 
 # Try models in order of preference (newest/best first)
 CLAUDE_MODELS = [
-    "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet v2 (Oct 2024) - newest
+    "claude-sonnet-4-5-20250929",  # Claude Sonnet 4.5 (Sep 2024) - NEWEST & BEST
+    "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet v2 (Oct 2024)
     "claude-3-5-sonnet-20240620",  # Claude 3.5 Sonnet v1 (June 2024)
     "claude-3-opus-20240229",      # Claude 3 Opus (Feb 2024)
     "claude-3-haiku-20240307",     # Claude 3 Haiku (Mar 2024) - fallback
