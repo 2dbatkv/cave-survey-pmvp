@@ -839,22 +839,33 @@ async def upload_image_drafts(
             # Read image bytes
             image_bytes = await file.read()
 
-            # Process with OCR
+            # Process with OCR - NEW WORKFLOW: Extract raw text only
             try:
-                # Try Claude API first if available, fall back to Tesseract
                 if settings.anthropic_api_key:
-                    logger.info(f"Using Claude API for OCR: {file.filename}")
-                    draft_data = claude_ocr.extract_survey_data_with_claude(
+                    logger.info(f"Using Claude API for raw text extraction: {file.filename}")
+                    raw_text, model_used = claude_ocr.extract_raw_text_with_claude(
                         image_bytes,
                         file.filename,
                         settings.anthropic_api_key
                     )
+
+                    # Store as draft with raw text (not parsed yet)
+                    draft_data = {
+                        "metadata": {
+                            "filename": file.filename,
+                            "source": "claude_raw_ocr",
+                            "model_used": model_used,
+                            "needs_parsing": True  # Flag that this needs user review + parsing
+                        },
+                        "raw_text": raw_text,  # Store the raw extracted text
+                        "shots": []  # Empty until user parses
+                    }
+                    logger.info(f"Extracted {len(raw_text)} characters with {model_used}")
                 else:
                     logger.info(f"Using Tesseract OCR (Claude API key not configured): {file.filename}")
                     draft_data = ocr_utils.process_image_to_draft(image_bytes, file.filename)
 
                 image_results.append(draft_data)
-                logger.info(f"OCR processed {file.filename}: {len(draft_data.get('shots', []))} shots found")
             except ValueError as ve:
                 # OCR-specific errors
                 raise HTTPException(status_code=400, detail=str(ve))
@@ -1166,6 +1177,206 @@ def commit_draft(
         logger.error(f"Commit draft error: {e}")
         db.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/surveys/{survey_id}/drafts/{draft_id}/parse-text")
+async def parse_draft_text(
+    survey_id: int,
+    draft_id: int,
+    data: dict,  # {"raw_text": "user-edited text"}
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Parse user-edited raw text into structured survey data.
+
+    This is the second step in the new workflow:
+    1. User uploads image → gets raw text
+    2. User edits raw text in textarea
+    3. User clicks "Parse" → THIS ENDPOINT
+    4. Returns structured data for confirmation
+    """
+    try:
+        # Get the draft
+        draft = db.query(SurveyDraft).filter(
+            SurveyDraft.id == draft_id,
+            SurveyDraft.survey_id == survey_id
+        ).first()
+
+        if not draft:
+            raise HTTPException(status_code=404, detail="Draft not found")
+
+        # Verify access
+        if settings.disable_auth:
+            survey = db.query(Survey).filter(Survey.id == survey_id).first()
+        else:
+            survey = db.query(Survey).filter(
+                Survey.id == survey_id,
+                Survey.owner_id == current_user.id
+            ).first()
+
+        if not survey:
+            raise HTTPException(status_code=403, detail="Access denied")
+
+        # Get the edited text
+        raw_text = data.get("raw_text", "").strip()
+        if not raw_text:
+            raise HTTPException(status_code=400, detail="No text provided")
+
+        # Parse the text using Claude (smart parsing)
+        if settings.anthropic_api_key:
+            logger.info(f"Parsing text with Claude for draft {draft_id}")
+            parsed_data = await parse_text_with_claude(raw_text, settings.anthropic_api_key)
+        else:
+            # Fallback to simple parsing
+            parsed_data = parse_text_simple(raw_text)
+
+        # Update the draft with parsed data
+        draft.draft_data["raw_text"] = raw_text
+        draft.draft_data["shots"] = parsed_data.get("shots", [])
+        draft.draft_data["metadata"]["needs_parsing"] = False
+        draft.draft_data["metadata"]["parsed_at"] = datetime.utcnow().isoformat()
+
+        # Validate the parsed data
+        is_valid, issues = draft_utils.validate_draft_data(draft.draft_data)
+        draft.has_errors = not is_valid
+        draft.error_count = len([i for i in issues if i.get("type") == "shot"])
+        draft.validation_notes = json.dumps(issues) if issues else None
+
+        db.commit()
+        db.refresh(draft)
+
+        return {
+            "success": True,
+            "draft_id": draft.id,
+            "shot_count": len(parsed_data.get("shots", [])),
+            "has_errors": draft.has_errors,
+            "validation_issues": issues,
+            "shots": parsed_data.get("shots", [])
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Parse text error: {e}")
+        import traceback
+        traceback.print_exc()
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+async def parse_text_with_claude(raw_text: str, api_key: str) -> Dict[str, Any]:
+    """
+    Use Claude to parse raw survey text into structured data.
+    Claude understands context and can handle various formats.
+    """
+    from anthropic import Anthropic
+
+    client = Anthropic(api_key=api_key)
+
+    prompt = f"""Parse this cave survey data into structured format.
+
+Survey data:
+{raw_text}
+
+Expected fields per shot:
+- from: FROM station name
+- to: TO station name (or null for splays)
+- distance: Shot distance
+- fs_azimuth: Foresight azimuth (0-360 degrees)
+- bs_azimuth: Backsight azimuth (0-360 degrees) if present
+- fs_inclination: Foresight inclination (-90 to +90 degrees)
+- bs_inclination: Backsight inclination if present
+- left, right, up, down: LRUD measurements if present
+
+Return ONLY valid JSON in this exact format:
+{{
+  "shots": [
+    {{
+      "id": 1,
+      "from": "A1",
+      "to": "A2",
+      "distance": 12.5,
+      "fs_azimuth": 317.2,
+      "bs_azimuth": 137.1,
+      "fs_inclination": -5.0,
+      "bs_inclination": 5.2,
+      "left": 2.0,
+      "right": 3.5,
+      "up": 5.0,
+      "down": 1.5,
+      "type": "survey"
+    }}
+  ]
+}}
+
+If a field is not present, omit it or set to null."""
+
+    # Try models in order
+    for model in claude_ocr.CLAUDE_MODELS:
+        try:
+            message = client.messages.create(
+                model=model,
+                max_tokens=4096,
+                messages=[{"role": "user", "content": prompt}]
+            )
+            response_text = message.content[0].text.strip()
+
+            # Try to extract JSON
+            if "{" in response_text:
+                start = response_text.find("{")
+                end = response_text.rfind("}") + 1
+                json_str = response_text[start:end]
+                return json.loads(json_str)
+
+        except Exception as e:
+            if "not_found_error" not in str(e):
+                logger.error(f"Claude parsing error: {e}")
+            continue
+
+    # Fallback
+    return {"shots": []}
+
+
+def parse_text_simple(raw_text: str) -> Dict[str, Any]:
+    """
+    Simple text parsing fallback (when Claude not available).
+    Tries to parse space/tab separated values.
+    """
+    lines = raw_text.strip().split("\n")
+    shots = []
+    shot_id = 1
+
+    for line in lines:
+        line = line.strip()
+        if not line or any(header in line.lower() for header in ["from", "to", "station", "distance"]):
+            continue
+
+        parts = re.split(r'\s+', line)
+        if len(parts) >= 5:
+            try:
+                shot = {
+                    "id": shot_id,
+                    "from": parts[0],
+                    "to": parts[1] if parts[1] != "-" else None,
+                    "distance": float(parts[2]),
+                    "fs_azimuth": float(parts[3]),
+                    "fs_inclination": float(parts[4]),
+                    "type": "splay" if parts[1] == "-" else "survey"
+                }
+
+                # Try to get more fields if present
+                if len(parts) > 5:
+                    shot["bs_azimuth"] = float(parts[5])
+                if len(parts) > 6:
+                    shot["bs_inclination"] = float(parts[6])
+
+                shots.append(shot)
+                shot_id += 1
+            except (ValueError, IndexError):
+                continue
+
+    return {"shots": shots}
 
 
 @app.delete("/surveys/{survey_id}/drafts/{draft_id}")

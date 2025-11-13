@@ -5,10 +5,114 @@ Uses Claude's vision capabilities to extract and parse survey data from images
 import base64
 import json
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Tuple
 from anthropic import Anthropic
 
 logger = logging.getLogger(__name__)
+
+# Try models in order of preference (newest/best first)
+CLAUDE_MODELS = [
+    "claude-3-5-sonnet-20241022",  # Claude 3.5 Sonnet v2 (Oct 2024) - newest
+    "claude-3-5-sonnet-20240620",  # Claude 3.5 Sonnet v1 (June 2024)
+    "claude-3-opus-20240229",      # Claude 3 Opus (Feb 2024)
+    "claude-3-haiku-20240307",     # Claude 3 Haiku (Mar 2024) - fallback
+]
+
+
+def extract_raw_text_with_claude(
+    image_bytes: bytes,
+    filename: str,
+    api_key: str
+) -> Tuple[str, str]:
+    """
+    Extract raw text from cave survey image using Claude's vision.
+
+    This is the NEW workflow - just extract text, don't parse.
+    User can edit the text and then parse it.
+
+    Args:
+        image_bytes: Image file bytes
+        filename: Original filename
+        api_key: Anthropic API key
+
+    Returns:
+        Tuple of (raw_text, model_used)
+    """
+    try:
+        client = Anthropic(api_key=api_key)
+        image_base64 = base64.standard_b64encode(image_bytes).decode("utf-8")
+        media_type = get_media_type(filename)
+
+        logger.info(f"Extracting raw text with Claude: {filename}, size={len(image_bytes)} bytes")
+
+        # Simple prompt - just extract the text as-is
+        prompt = """Extract ALL text from this cave survey data sheet exactly as it appears.
+
+Preserve:
+- All numbers and measurements
+- Station names/labels
+- Column headers
+- All data rows
+- Any notes or annotations
+
+Format the output as plain text, keeping the tabular structure as clear as possible.
+Use spaces or tabs to maintain column alignment.
+
+Return ONLY the extracted text, nothing else."""
+
+        # Try models in order until one works
+        model_used = None
+        for model in CLAUDE_MODELS:
+            try:
+                logger.info(f"Trying model: {model}")
+                message = client.messages.create(
+                    model=model,
+                    max_tokens=4096,
+                    messages=[
+                        {
+                            "role": "user",
+                            "content": [
+                                {
+                                    "type": "image",
+                                    "source": {
+                                        "type": "base64",
+                                        "media_type": media_type,
+                                        "data": image_base64,
+                                    },
+                                },
+                                {
+                                    "type": "text",
+                                    "text": prompt
+                                }
+                            ],
+                        }
+                    ],
+                )
+
+                model_used = model
+                logger.info(f"✅ Successfully used model: {model}")
+                break
+
+            except Exception as e:
+                error_str = str(e)
+                if "not_found_error" in error_str:
+                    logger.warning(f"Model {model} not available, trying next...")
+                    continue
+                else:
+                    raise
+
+        if not model_used:
+            raise ValueError("No Claude models available for your API key")
+
+        # Extract raw text
+        raw_text = message.content[0].text.strip()
+        logger.info(f"Extracted {len(raw_text)} characters of text")
+
+        return raw_text, model_used
+
+    except Exception as e:
+        logger.error(f"Claude OCR failed: {str(e)}")
+        raise ValueError(f"Failed to extract text with Claude: {str(e)}")
 
 
 def extract_survey_data_with_claude(
