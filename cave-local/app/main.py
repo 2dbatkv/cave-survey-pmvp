@@ -382,6 +382,15 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
 
 @app.post("/token", response_model=Token)
 async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    # DEVELOPMENT MODE: Bypass authentication
+    if settings.disable_auth:
+        logger.warning("⚠️ AUTHENTICATION DISABLED - Issuing demo token")
+        access_token_expires = timedelta(minutes=settings.access_token_expire_minutes)
+        access_token = create_access_token(
+            data={"sub": "demo"}, expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+
     user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(

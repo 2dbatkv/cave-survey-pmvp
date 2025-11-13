@@ -56,6 +56,25 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
     db: Session = Depends(get_db)
 ):
+    # DEVELOPMENT MODE: Bypass authentication if disabled
+    if settings.disable_auth:
+        logger.warning("⚠️ AUTHENTICATION DISABLED - Using demo user")
+        # Return or create a demo user
+        demo_user = get_user_by_username(db, "demo")
+        if not demo_user:
+            # Create demo user on the fly
+            demo_user = User(
+                username="demo",
+                email="demo@example.com",
+                hashed_password="",
+                is_active=True,
+                is_admin=True
+            )
+            db.add(demo_user)
+            db.commit()
+            db.refresh(demo_user)
+        return demo_user
+
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate credentials",
@@ -68,7 +87,7 @@ async def get_current_user(
             raise credentials_exception
     except JWTError:
         raise credentials_exception
-    
+
     user = get_user_by_username(db, username)
     if user is None:
         raise credentials_exception

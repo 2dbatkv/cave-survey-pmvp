@@ -39,6 +39,9 @@ class Settings(BaseSettings):
 
     # Anthropic Claude API
     anthropic_api_key: str = ""
+
+    # Development mode - disable authentication (DANGEROUS in production!)
+    disable_auth: bool = False
     
     @field_validator('allowed_origins')
     @classmethod
