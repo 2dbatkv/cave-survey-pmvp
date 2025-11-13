@@ -24,7 +24,9 @@ class Settings(BaseSettings):
     allowed_origins: Union[List[str], str] = "http://localhost:5173"
     
     # Auth
-    secret_key: str = "change-this-in-production"
+    # SECRET_KEY is required - no default provided for security
+    # Generate with: openssl rand -hex 32
+    secret_key: str
     access_token_expire_minutes: int = 30
     algorithm: str = "HS256"
     
@@ -34,6 +36,9 @@ class Settings(BaseSettings):
     dd_service: str = "cave-survey-api"
     dd_env: str = "production"
     dd_version: str = "1.0.0"
+
+    # Anthropic Claude API
+    anthropic_api_key: str = ""
     
     @field_validator('allowed_origins')
     @classmethod

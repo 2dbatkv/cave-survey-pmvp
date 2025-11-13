@@ -10,6 +10,7 @@ import io, os, math, json
 import logging
 from . import export_utils
 from . import ocr_utils
+from . import claude_ocr
 from typing import List
 
 # Datadog APM
@@ -26,7 +27,7 @@ from .config import get_settings
 from .database import get_db, create_tables, User, Survey, Feedback, SurveyDraft
 from .auth import (
     authenticate_user, create_access_token, get_current_active_user,
-    get_password_hash, get_user_by_username
+    get_password_hash, get_user_by_username, get_current_admin_user
 )
 from .s3_service import s3_service
 from . import draft_utils
@@ -65,14 +66,43 @@ app = FastAPI(title=settings.app_name, debug=settings.debug)
 # Create database tables on startup
 create_tables()
 
+# Validate critical configuration on startup
+@app.on_event("startup")
+async def validate_configuration():
+    """Validate critical environment variables and configuration on startup."""
+    errors = []
+
+    # Check SECRET_KEY
+    if not settings.secret_key:
+        errors.append("SECRET_KEY environment variable is not set")
+    elif len(settings.secret_key) < 32:
+        errors.append("SECRET_KEY is too short (minimum 32 characters recommended)")
+
+    # Check DATABASE_URL
+    if not settings.database_url:
+        errors.append("DATABASE_URL environment variable is not set")
+
+    # Warn if S3 credentials are missing (not critical, but important)
+    if not settings.aws_access_key_id or not settings.s3_bucket_name:
+        logger.warning("AWS S3 credentials not configured - file storage will not work")
+        logger.warning("Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET_NAME")
+
+    # If there are critical errors, fail startup
+    if errors:
+        error_message = "Configuration validation failed:\n" + "\n".join(f"  - {e}" for e in errors)
+        logger.error(error_message)
+        raise ValueError(error_message)
+
+    logger.info("Configuration validation passed")
+
 # ----- CORS -----
-# Debug: log the allowed origins
+# Log the allowed origins for debugging
 logger.info(f"CORS allowed_origins: {settings.allowed_origins}")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Temporary wildcard for debugging
-    allow_credentials=False,  # Must be False when using wildcard
+    allow_origins=settings.allowed_origins,
+    allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
 )
@@ -315,16 +345,17 @@ async def register(user: UserCreate, db: Session = Depends(get_db)):
             detail="Username already registered"
         )
 
-    # Truncate password to 72 bytes before hashing (bcrypt limitation)
-    password_to_hash = user.password
-    password_bytes = password_to_hash.encode('utf-8')
+    # Validate password length (bcrypt limitation is 72 bytes)
+    password_bytes = user.password.encode('utf-8')
     if len(password_bytes) > 72:
-        password_bytes = password_bytes[:72]
-        password_to_hash = password_bytes.decode('utf-8', errors='ignore')
+        raise HTTPException(
+            status_code=400,
+            detail="Password is too long. Please use a password with 72 bytes or fewer."
+        )
 
     # Create new user
     try:
-        hashed_password = get_password_hash(password_to_hash)
+        hashed_password = get_password_hash(user.password)
     except ValueError as e:
         logger.error(f"Password hashing error: {e}")
         raise HTTPException(
@@ -514,7 +545,10 @@ def submit_feedback(
         raise HTTPException(status_code=500, detail="Failed to submit feedback")
 
 @app.get("/admin/feedback")
-def view_feedback(db: Session = Depends(get_db)):
+def view_feedback(
+    current_user: User = Depends(get_current_admin_user),
+    db: Session = Depends(get_db)
+):
     try:
         feedback_items = db.query(Feedback).order_by(Feedback.submitted_at.desc()).all()
         
@@ -752,7 +786,18 @@ async def upload_image_drafts(
 
             # Process with OCR
             try:
-                draft_data = ocr_utils.process_image_to_draft(image_bytes, file.filename)
+                # Try Claude API first if available, fall back to Tesseract
+                if settings.anthropic_api_key:
+                    logger.info(f"Using Claude API for OCR: {file.filename}")
+                    draft_data = claude_ocr.extract_survey_data_with_claude(
+                        image_bytes,
+                        file.filename,
+                        settings.anthropic_api_key
+                    )
+                else:
+                    logger.info(f"Using Tesseract OCR (Claude API key not configured): {file.filename}")
+                    draft_data = ocr_utils.process_image_to_draft(image_bytes, file.filename)
+
                 image_results.append(draft_data)
                 logger.info(f"OCR processed {file.filename}: {len(draft_data.get('shots', []))} shots found")
             except ValueError as ve:
@@ -765,7 +810,11 @@ async def upload_image_drafts(
         elif len(image_results) == 1:
             draft_data = image_results[0]
         else:
-            draft_data = ocr_utils.combine_multiple_images(image_results)
+            # Use Claude's combine function if Claude was used, otherwise use ocr_utils
+            if settings.anthropic_api_key:
+                draft_data = claude_ocr.combine_multiple_images(image_results)
+            else:
+                draft_data = ocr_utils.combine_multiple_images(image_results)
 
         # Validate data
         is_valid, issues = draft_utils.validate_draft_data(draft_data)

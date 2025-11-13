@@ -17,3 +17,5 @@ datadog
 # OCR dependencies
 Pillow
 pytesseract
+# Claude API for advanced OCR
+anthropic>=0.39.0
