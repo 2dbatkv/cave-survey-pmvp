@@ -989,10 +989,14 @@ def get_draft(
             raise HTTPException(status_code=404, detail="Draft not found")
 
         # Verify user has access to the survey
-        survey = db.query(Survey).filter(
-            Survey.id == survey_id,
-            Survey.owner_id == current_user.id
-        ).first()
+        # In dev mode with DISABLE_AUTH, skip ownership check
+        if settings.disable_auth:
+            survey = db.query(Survey).filter(Survey.id == survey_id).first()
+        else:
+            survey = db.query(Survey).filter(
+                Survey.id == survey_id,
+                Survey.owner_id == current_user.id
+            ).first()
 
         if not survey:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -1046,11 +1050,14 @@ def update_draft(
         if not draft:
             raise HTTPException(status_code=404, detail="Draft not found")
 
-        # Verify access
-        survey = db.query(Survey).filter(
-            Survey.id == survey_id,
-            Survey.owner_id == current_user.id
-        ).first()
+        # Verify access - skip ownership check in dev mode
+        if settings.disable_auth:
+            survey = db.query(Survey).filter(Survey.id == survey_id).first()
+        else:
+            survey = db.query(Survey).filter(
+                Survey.id == survey_id,
+                Survey.owner_id == current_user.id
+            ).first()
 
         if not survey:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -1111,11 +1118,14 @@ def commit_draft(
         if not draft:
             raise HTTPException(status_code=404, detail="Draft not found")
 
-        # Verify access
-        survey = db.query(Survey).filter(
-            Survey.id == survey_id,
-            Survey.owner_id == current_user.id
-        ).first()
+        # Verify access - skip ownership check in dev mode
+        if settings.disable_auth:
+            survey = db.query(Survey).filter(Survey.id == survey_id).first()
+        else:
+            survey = db.query(Survey).filter(
+                Survey.id == survey_id,
+                Survey.owner_id == current_user.id
+            ).first()
 
         if not survey:
             raise HTTPException(status_code=403, detail="Access denied")
@@ -1177,11 +1187,14 @@ def delete_draft(
         if not draft:
             raise HTTPException(status_code=404, detail="Draft not found")
 
-        # Verify access
-        survey = db.query(Survey).filter(
-            Survey.id == survey_id,
-            Survey.owner_id == current_user.id
-        ).first()
+        # Verify access - skip ownership check in dev mode
+        if settings.disable_auth:
+            survey = db.query(Survey).filter(Survey.id == survey_id).first()
+        else:
+            survey = db.query(Survey).filter(
+                Survey.id == survey_id,
+                Survey.owner_id == current_user.id
+            ).first()
 
         if not survey:
             raise HTTPException(status_code=403, detail="Access denied")
